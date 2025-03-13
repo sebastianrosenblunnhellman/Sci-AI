@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { 
-  Upload, 
-  Loader2, 
-  Download, 
+import {
+  Upload,
+  Loader2,
+  Download,
   AlertCircle,
   Copy,
   CheckCircle2,
@@ -58,29 +58,43 @@ export default function PDFTranslator() {
         setTranslatedText('');
         setStepStatus({ ...stepStatus, upload: 'complete' });
         setReadyForNextStep(true);
+
+        // Test image extraction
+        try {
+          const extractionResult = await extractTextFromPDF(file);
+          console.log("Extraction Result:", extractionResult); // Log the result
+          setExtractedText(extractionResult.text); // Set extracted text as before (for now)
+        } catch (extractionError) {
+          console.error("Error during extraction test:", extractionError);
+          setError(extractionError instanceof Error ? extractionError.message : 'Error al extraer texto e imágenes del PDF');
+          setStepStatus(prev => ({ ...prev, upload: 'error' }));
+        }
       }
     }
   });
 
   const handleNextStep = async () => {
     if (!readyForNextStep) return;
-    
+
     setReadyForNextStep(false);
-    
+
     if (currentStep === 0) {
       try {
         setIsProcessing(true);
         setStepStatus(prev => ({ ...prev, translate: 'processing' }));
         setProgress(10);
-        
-        const text = await extractTextFromPDF(file!);
+
+        // Modified to handle the object returned from extractTextFromPDF
+        const extractionResult = await extractTextFromPDF(file!);
+        const text = extractionResult.text;
+
         if (!text.trim()) {
           throw new Error('No se pudo extraer texto del PDF.');
         }
         setExtractedText(text);
         setProgress(40);
-        
-        const translated = await translateChunks(text);
+
+        const translated = await translateChunks(text); // Translate only the text part for now
         if (!translated.trim()) {
           throw new Error('La traducción falló. Por favor, inténtelo de nuevo.');
         }
@@ -148,8 +162,8 @@ export default function PDFTranslator() {
               </p>
             </div>
             {readyForNextStep && (
-              <Button 
-                className="w-full mt-4" 
+              <Button
+                className="w-full mt-4"
                 onClick={handleNextStep}
               >
                 Comenzar Traducción
@@ -199,7 +213,7 @@ export default function PDFTranslator() {
                   </Button>
                 </div>
               </div>
-              
+
               <div className="border rounded-lg p-6 min-h-[600px] bg-white">
                 {isEditing ? (
                   <textarea
@@ -209,7 +223,7 @@ export default function PDFTranslator() {
                     spellCheck={false}
                   />
                 ) : (
-                  <div className="prose prose-sm max-w-none">
+                  <div className="react-markdown">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {translatedText}
                     </ReactMarkdown>

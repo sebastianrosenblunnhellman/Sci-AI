@@ -8,7 +8,7 @@ if (typeof window !== 'undefined') {
   pdfjsLib.GlobalWorkerOptions.workerPort = worker;
 }
 
-export async function extractTextFromPDF(file: File): Promise<string> {
+export async function extractTextFromPDF(file: File): Promise<{ text: string; images: { page: number; dataUrl: string }[] }> {
   try {
     if (!file.type.includes('pdf')) {
       throw new Error('Invalid file type. Please upload a PDF file.');
@@ -19,7 +19,7 @@ export async function extractTextFromPDF(file: File): Promise<string> {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    
+
     if (arrayBuffer.byteLength === 0) {
       throw new Error('The PDF file appears to be empty.');
     }
@@ -38,6 +38,7 @@ export async function extractTextFromPDF(file: File): Promise<string> {
     }
 
     let fullText = '';
+    const images: { page: number; dataUrl: string }[] = [];
     const numPages = pdf.numPages;
 
     if (numPages === 0) {
@@ -46,7 +47,7 @@ export async function extractTextFromPDF(file: File): Promise<string> {
 
     for (let i = 1; i <= numPages; i++) {
       const page = await pdf.getPage(i);
-      
+
       if (!page) {
         console.warn(`Failed to load page ${i}`);
         continue;
@@ -66,8 +67,14 @@ export async function extractTextFromPDF(file: File): Promise<string> {
           .join(' ');
 
         fullText += `${pageText}\n\n`;
+
+        // Extract images from the page
+        const pageImages = await extractImagesFromPage(page, i);
+        images.push(...pageImages);
+
+
       } catch (pageError) {
-        console.error(`Error extracting text from page ${i}:`, pageError);
+        console.error(`Error extracting content from page ${i}:`, pageError);
       }
     }
 
@@ -77,14 +84,14 @@ export async function extractTextFromPDF(file: File): Promise<string> {
       .replace(/[^\S\n]+/g, ' ')
       .trim();
 
-    if (!cleanedText) {
-      throw new Error('No text could be extracted from the PDF. The document might be scanned or contain only images.');
+    if (!cleanedText && images.length === 0) {
+      throw new Error('No text or images could be extracted from the PDF. The document might be scanned or contain only non-extractable content.');
     }
 
-    return cleanedText;
+    return { text: cleanedText, images };
   } catch (error) {
     console.error('PDF extraction error:', error);
-    
+
     if (error instanceof Error) {
       if (error.message.includes('Invalid file type')) {
         throw new Error('Please upload a valid PDF file.');
@@ -93,42 +100,79 @@ export async function extractTextFromPDF(file: File): Promise<string> {
       } else if (error.message.includes('corrupted')) {
         throw new Error('The PDF file appears to be corrupted. Please try a different file.');
       } else if (error.message.includes('scanned')) {
-        throw new Error('This appears to be a scanned PDF. Text extraction is only supported for digital PDFs.');
+        throw new Error('This appears to be a scanned PDF. Text and image extraction may not be fully supported for scanned PDFs.');
       }
       throw error;
     }
-    
-    throw new Error('Failed to extract text from the PDF. Please try a different file.');
+
+    throw new Error('Failed to extract content from the PDF. Please try a different file.');
   }
 }
+
+
+async function extractImagesFromPage(page: pdfjsLib.PDFPageProxy, pageNumber: number): Promise<{ page: number; dataUrl: string }[]> {
+  const images: { page: number; dataUrl: string }[] = [];
+  try {
+    const operators = await page.getOperatorList();
+    for (const op of operators.fnArray) {
+      if (op === pdfjsLib.OPS.paintImageXObject || op === pdfjsLib.OPS.paintJpegXObject) {
+        const imageName = operators.argsArray[operators.fnArray.indexOf(op)][0];
+        const image = await page.getXObject(imageName);
+        if (image instanceof pdfjsLib.PDFImage) {
+          const imageData = await image.getData();
+          const imageType = image.subtype === 'ImageB' ? 'image/bmp' : image.subtype === 'ImageC' ? 'image/jpeg' : 'image/png'; // Default to PNG if subtype is not recognized
+          const base64Image = arrayBufferToBase64(imageData, imageType);
+          images.push({ page: pageNumber, dataUrl: base64Image });
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`Error extracting images from page ${pageNumber}:`, error);
+  }
+  return images;
+}
+
+
+function arrayBufferToBase64(buffer: Uint8Array, imageType: string): string {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return `data:${imageType};base64,${window.btoa(binary)}`;
+}
+
 
 export async function createPDFFromText(markdownText: string): Promise<Uint8Array> {
   try {
     const pdfDoc = await PDFDocument.create();
     const timesRomanFont = await pdfDoc.embedFont(StandardFonts.TimesRoman);
     const timesBoldFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
-    
+
     // Convert markdown to HTML
     const htmlContent = marked(markdownText);
-    
+
     // Basic HTML to text conversion (you might want to enhance this)
     const plainText = htmlContent
       .replace(/<h1.*?>(.*?)<\/h1>/g, '\n# $1\n')
       .replace(/<h2.*?>(.*?)<\/h2>/g, '\n## $1\n')
       .replace(/<h3.*?>(.*?)<\/h3>/g, '\n### $1\n')
       .replace(/<p.*?>(.*?)<\/p>/g, '\n$1\n')
+      .replace(/<img.*?src="(.*?)".*?>/g, '\n[Image]\n') // Placeholder for images
       .replace(/<.*?>/g, '')
       .replace(/&nbsp;/g, ' ')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
+      .replace(/</g, '<')
+      .replace(/>/g, '>')
       .replace(/&amp;/g, '&')
       .trim();
+
 
     const lines = plainText.split('\n');
     const fontSize = 12;
     const margin = 50;
     const lineHeight = fontSize * 1.5;
-    
+
     let currentPage = pdfDoc.addPage();
     const { width, height } = currentPage.getSize();
     let y = height - margin;
@@ -139,19 +183,19 @@ export async function createPDFFromText(markdownText: string): Promise<Uint8Arra
         const level = line.match(/^#+/)[0].length;
         const text = line.replace(/^#+\s*/, '');
         const headerSize = fontSize + (3 - level) * 4;
-        
+
         if (y - headerSize < margin) {
           currentPage = pdfDoc.addPage();
           y = height - margin;
         }
-        
+
         currentPage.drawText(text, {
           x: margin,
           y,
           size: headerSize,
           font: timesBoldFont
         });
-        
+
         y -= headerSize * 1.5;
       } else if (line.trim()) {
         // Handle regular text
@@ -159,7 +203,7 @@ export async function createPDFFromText(markdownText: string): Promise<Uint8Arra
           currentPage = pdfDoc.addPage();
           y = height - margin;
         }
-        
+
         currentPage.drawText(line.trim(), {
           x: margin,
           y,
@@ -168,7 +212,7 @@ export async function createPDFFromText(markdownText: string): Promise<Uint8Arra
           lineHeight,
           maxWidth: width - 2 * margin
         });
-        
+
         y -= lineHeight;
       }
     }
