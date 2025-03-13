@@ -4,60 +4,27 @@ import { useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { 
   Upload, 
-  FileText, 
   Loader2, 
   Download, 
-  AlertCircle, 
-  Type, 
+  AlertCircle,
   Copy,
   CheckCircle2,
-  ArrowRight,
-  ArrowLeft
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Card } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import dynamic from 'next/dynamic';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { extractTextFromPDF } from '@/lib/pdf';
 import { translateChunks } from '@/lib/gemini';
 import { createPDFFromText } from '@/lib/pdf';
 import { cn } from '@/lib/utils';
 
-// Import ReactQuill dynamically to avoid SSR issues
-const ReactQuill = dynamic(() => import('react-quill'), {
-  ssr: false,
-  loading: () => <p>Cargando editor...</p>
-});
-
 const STEPS = [
   { id: 'upload', title: 'Subir PDF', description: 'Sube tu documento PDF científico' },
-  { id: 'extract', title: 'Extraer Texto', description: 'Extracción del texto del documento' },
   { id: 'translate', title: 'Traducir', description: 'Traducción del texto al español' },
   { id: 'edit', title: 'Editar', description: 'Revisa y edita la traducción' }
-];
-
-const QUILL_MODULES = {
-  toolbar: [
-    [{ 'header': [1, 2, 3, false] }],
-    ['bold', 'italic', 'underline', 'strike'],
-    [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-    [{ 'script': 'sub'}, { 'script': 'super' }],
-    [{ 'indent': '-1'}, { 'indent': '+1' }],
-    ['blockquote', 'code-block'],
-    [{ 'color': [] }, { 'background': [] }],
-    ['clean']
-  ]
-};
-
-const QUILL_FORMATS = [
-  'header',
-  'bold', 'italic', 'underline', 'strike',
-  'list', 'bullet',
-  'script',
-  'indent',
-  'blockquote', 'code-block',
-  'color', 'background'
 ];
 
 export default function PDFTranslator() {
@@ -70,10 +37,11 @@ export default function PDFTranslator() {
   const [currentStep, setCurrentStep] = useState(0);
   const [stepStatus, setStepStatus] = useState<Record<string, 'pending' | 'processing' | 'complete' | 'error'>>({
     upload: 'pending',
-    extract: 'pending',
     translate: 'pending',
     edit: 'pending'
   });
+  const [readyForNextStep, setReadyForNextStep] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
@@ -89,43 +57,48 @@ export default function PDFTranslator() {
         setExtractedText('');
         setTranslatedText('');
         setStepStatus({ ...stepStatus, upload: 'complete' });
-        
-        try {
-          setIsProcessing(true);
-          setProgress(10);
-          
-          // Extract text from PDF
-          setStepStatus(prev => ({ ...prev, extract: 'processing' }));
-          const text = await extractTextFromPDF(file);
-          if (!text.trim()) {
-            throw new Error('No se pudo extraer texto del PDF.');
-          }
-          setExtractedText(text);
-          setProgress(40);
-          setStepStatus(prev => ({ ...prev, extract: 'complete' }));
-          
-          // Translate text
-          setStepStatus(prev => ({ ...prev, translate: 'processing' }));
-          const translated = await translateChunks(text);
-          if (!translated.trim()) {
-            throw new Error('La traducción falló. Por favor, inténtelo de nuevo.');
-          }
-          setTranslatedText(translated);
-          setProgress(100);
-          setStepStatus(prev => ({ ...prev, translate: 'complete', edit: 'pending' }));
-          setCurrentStep(3); // Move to edit step
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'Ocurrió un error inesperado');
-          setStepStatus(prev => ({
-            ...prev,
-            [STEPS[currentStep].id]: 'error'
-          }));
-        } finally {
-          setIsProcessing(false);
-        }
+        setReadyForNextStep(true);
       }
     }
   });
+
+  const handleNextStep = async () => {
+    if (!readyForNextStep) return;
+    
+    setReadyForNextStep(false);
+    
+    if (currentStep === 0) {
+      try {
+        setIsProcessing(true);
+        setStepStatus(prev => ({ ...prev, translate: 'processing' }));
+        setProgress(10);
+        
+        const text = await extractTextFromPDF(file!);
+        if (!text.trim()) {
+          throw new Error('No se pudo extraer texto del PDF.');
+        }
+        setExtractedText(text);
+        setProgress(40);
+        
+        const translated = await translateChunks(text);
+        if (!translated.trim()) {
+          throw new Error('La traducción falló. Por favor, inténtelo de nuevo.');
+        }
+        setTranslatedText(translated);
+        setProgress(100);
+        setStepStatus(prev => ({ ...prev, translate: 'complete', edit: 'pending' }));
+        setCurrentStep(2);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Ocurrió un error inesperado');
+        setStepStatus(prev => ({
+          ...prev,
+          translate: 'error'
+        }));
+      } finally {
+        setIsProcessing(false);
+      }
+    }
+  };
 
   const handleDownload = async () => {
     try {
@@ -174,45 +147,44 @@ export default function PDFTranslator() {
                 Tamaño máximo: 100MB
               </p>
             </div>
+            {readyForNextStep && (
+              <Button 
+                className="w-full mt-4" 
+                onClick={handleNextStep}
+              >
+                Comenzar Traducción
+              </Button>
+            )}
           </Card>
         );
 
-      case 1: // Extract
+      case 1: // Translate
         return (
           <Card className="p-6">
             <div className="space-y-4">
               <div className="flex items-center gap-4">
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                <span className="text-lg">Extrayendo texto del PDF...</span>
+                <span className="text-lg">Traduciendo documento...</span>
               </div>
               <Progress value={progress} className="h-2" />
             </div>
           </Card>
         );
 
-      case 2: // Translate
-        return (
-          <Card className="p-6">
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                <span className="text-lg">Traduciendo texto...</span>
-              </div>
-              <Progress value={progress} className="h-2" />
-              <div className="bg-muted/50 rounded-lg p-4">
-                <pre className="whitespace-pre-wrap font-sans">{extractedText}</pre>
-              </div>
-            </div>
-          </Card>
-        );
-
-      case 3: // Edit
+      case 2: // Edit
         return (
           <Card className="p-6">
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="text-xl font-semibold">Editar Traducción</h3>
                 <div className="space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsEditing(!isEditing)}
+                  >
+                    {isEditing ? 'Ver Resultado' : 'Editar Markdown'}
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -228,27 +200,21 @@ export default function PDFTranslator() {
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <h4 className="font-medium text-muted-foreground">Texto Original</h4>
-                  <div className="border rounded-lg p-4 bg-muted/50 max-h-[600px] overflow-y-auto">
-                    <pre className="whitespace-pre-wrap font-sans">{extractedText}</pre>
+              <div className="border rounded-lg p-6 min-h-[600px] bg-white">
+                {isEditing ? (
+                  <textarea
+                    value={translatedText}
+                    onChange={(e) => setTranslatedText(e.target.value)}
+                    className="w-full h-full min-h-[600px] font-mono text-sm p-4 focus:outline-none"
+                    spellCheck={false}
+                  />
+                ) : (
+                  <div className="prose prose-sm max-w-none">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {translatedText}
+                    </ReactMarkdown>
                   </div>
-                </div>
-                
-                <div className="space-y-2">
-                  <h4 className="font-medium text-muted-foreground">Texto Traducido</h4>
-                  <div className="border rounded-lg">
-                    <ReactQuill
-                      value={translatedText}
-                      onChange={setTranslatedText}
-                      modules={QUILL_MODULES}
-                      formats={QUILL_FORMATS}
-                      theme="snow"
-                      className="min-h-[600px]"
-                    />
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           </Card>
