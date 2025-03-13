@@ -115,7 +115,7 @@ async function extractImagesFromPage(page: pdfjsLib.PDFPageProxy, pageNumber: nu
   try {
     const operators = await page.getOperatorList();
     for (const op of operators.fnArray) {
-      if (op === pdfjsLib.OPS.paintImageXObject || op === pdfjsLib.OPS.paintJpegXObject) {
+      if (op === pdfjsLib.OPS.paintImageXObject || op === pdfjsLib.OPS.paintXObject) {
         const imageName = operators.argsArray[operators.fnArray.indexOf(op)][0];
         const image = await page.getXObject(imageName);
         if (image instanceof pdfjsLib.PDFImage) {
