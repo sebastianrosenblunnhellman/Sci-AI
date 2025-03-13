@@ -93,7 +93,7 @@ export async function translateChunks(text: string, chunkSize: number = 2000): P
     const translatedChunks = await Promise.all(
       chunks.map(async (chunk, index) => {
         const maxRetries = 3;
-        let lastError = null;
+        let lastError: Error | null = null; // Explicitly type lastError
         
         for (let retries = 0; retries < maxRetries; retries++) {
           try {
@@ -103,7 +103,7 @@ export async function translateChunks(text: string, chunkSize: number = 2000): P
             }
             return translated;
           } catch (error) {
-            lastError = error;
+            lastError = error instanceof Error ? error : new Error(String(error)); // Ensure lastError is an Error
             if (retries < maxRetries - 1) {
               await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries)));
               continue;
