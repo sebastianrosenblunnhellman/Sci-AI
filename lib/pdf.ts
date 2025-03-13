@@ -147,17 +147,6 @@ async function extractImagesFromPage(page: pdfjsLib.PDFPageProxy, pageNumber: nu
 }
 
 
-function arrayBufferToBase64(buffer: Uint8Array, imageType: string): string {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return `data:${imageType};base64,${window.btoa(binary)}`;
-}
-
-
 export async function createPDFFromText(markdownText: string): Promise<Uint8Array> {
   try {
     const pdfDoc = await PDFDocument.create();
@@ -165,7 +154,7 @@ export async function createPDFFromText(markdownText: string): Promise<Uint8Arra
     const timesBoldFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
 
     // Convert markdown to HTML
-    const htmlContent = marked(markdownText);
+    const htmlContent = await marked(markdownText); // Use await here
 
     // Basic HTML to text conversion (you might want to enhance this)
     const plainText = htmlContent
