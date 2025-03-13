@@ -8,6 +8,18 @@ if (typeof window !== 'undefined') {
   pdfjsLib.GlobalWorkerOptions.workerPort = worker;
 }
 
+// --- ADDED FUNCTION ---
+function arrayBufferToBase64(buffer: ArrayBuffer, imageType: string): string {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return `data:${imageType};base64,${btoa(binary)}`;
+}
+// --- END ADDED FUNCTION ---
+
 export async function extractTextFromPDF(file: File): Promise<{ text: string; images: { page: number; dataUrl: string }[] }> {
   try {
     if (!file.type.includes('pdf')) {
@@ -154,7 +166,7 @@ export async function createPDFFromText(markdownText: string): Promise<Uint8Arra
     const timesBoldFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
 
     // Convert markdown to HTML
-    const htmlContent = await marked(markdownText); // Use await here
+    const htmlContent = await marked(markdownText);
 
     // Basic HTML to text conversion (you might want to enhance this)
     const plainText = htmlContent
