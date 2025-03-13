@@ -112,22 +112,36 @@ export async function extractTextFromPDF(file: File): Promise<{ text: string; im
 
 async function extractImagesFromPage(page: pdfjsLib.PDFPageProxy, pageNumber: number): Promise<{ page: number; dataUrl: string }[]> {
   const images: { page: number; dataUrl: string }[] = [];
-  try {
-    const operators = await page.getOperatorList();
-    for (const op of operators.fnArray) {
-      if (op === pdfjsLib.OPS.paintImageXObject || op === pdfjsLib.OPS.paintXObject) {
-        const imageName = operators.argsArray[operators.fnArray.indexOf(op)][0];
-        const image = await page.getXObject(imageName);
-        if (image instanceof pdfjsLib.PDFImage) {
-          const imageData = await image.getData();
-          const imageType = image.subtype === 'ImageB' ? 'image/bmp' : image.subtype === 'ImageC' ? 'image/jpeg' : 'image/png'; // Default to PNG if subtype is not recognized
-          const base64Image = arrayBufferToBase64(imageData, imageType);
-          images.push({ page: pageNumber, dataUrl: base64Image });
-        }
+  const operatorList = await page.getOperatorList();
+
+  for (let i = 0; i < operatorList.fnArray.length; i++) {
+    const op = operatorList.fnArray[i];
+    if (op === pdfjsLib.OPS.paintImageXObject || op === pdfjsLib.OPS.paintXObject) {
+      const imageName = operatorList.argsArray[i][0];
+
+      // Type assertion to bypass TypeScript error (temporary)
+      const pageAny: any = page;
+
+      let img;
+
+      try {
+          //Try to get the image using getXObject
+          img = await pageAny.getXObject(imageName);
+      }
+      catch(error)
+      {
+          //If getXObject fails, try to get the image from the page's objects directly
+          console.log("getXObject failed. Trying alternative method", error)
+          img = pageAny.objs.get(imageName);
+      }
+
+
+      if (img && img.data) {
+        const imageType = img.subtype === 'ImageB' ? 'image/bmp' : img.subtype === 'ImageC' ? 'image/jpeg' : 'image/png';
+        const base64Image = arrayBufferToBase64(img.data, imageType);
+        images.push({ page: pageNumber, dataUrl: base64Image });
       }
     }
-  } catch (error) {
-    console.error(`Error extracting images from page ${pageNumber}:`, error);
   }
   return images;
 }
