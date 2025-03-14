@@ -9,8 +9,6 @@ import {
   AlertCircle,
   Copy,
   CheckCircle2,
-  Edit,
-  Eye,
   ChevronLeft,
   ChevronRight,
   Info,
@@ -49,6 +47,7 @@ export default function PDFTranslator() {
     translate: 'pending',
     edit: 'pending'
   });
+  // Estado para controlar si el sidebar está abierto o cerrado
   const [readyForNextStep, setReadyForNextStep] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [extractionProgress, setExtractionProgress] = useState(0);
@@ -62,6 +61,8 @@ export default function PDFTranslator() {
   const [isCheckingApiKey, setIsCheckingApiKey] = useState(false);
   const [pdfPreview, setPdfPreview] = useState<Uint8Array | null>(null);
   const [isGeneratingPdfPreview, setIsGeneratingPdfPreview] = useState(false);
+
+  // ... resto de tus funciones existentes
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
@@ -425,39 +426,32 @@ export default function PDFTranslator() {
                     
                     {extractedText && (
                       <div className="mt-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-1.5">
-                            <h4 className="text-sm font-medium">Vista previa del texto extraído</h4>
+                        <Button 
+                          variant="outline" 
+                          onClick={() => setShowFullPreview(!showFullPreview)}
+                          className="w-full flex items-center justify-between"
+                        >
+                          <div className="flex items-center">
+                            <span>Texto extraído</span>
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Info className="h-4 w-4 text-muted-foreground" />
+                                  <Info className="h-4 w-4 text-amber-500 ml-1.5" />
                                 </TooltipTrigger>
-                                <TooltipContent>
-                                  Este es el texto que será traducido
-                                </TooltipContent>
+                                <TooltipContent side="top" className="max-w-[260px] text-xs">
+                                  Sin procesar
+                               </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
                           </div>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => setShowFullPreview(!showFullPreview)}
-                            className="text-xs h-8"
-                          >
-                            {showFullPreview ? 'Mostrar menos' : 'Ver completo'}
-                          </Button>
-                        </div>
-                        <div
-                          className={cn(
-                            "border rounded-md p-3 overflow-auto text-sm mt-1 bg-muted/40 font-mono transition-all",
-                            showFullPreview ? "max-h-[500px]" : "max-h-40"
-                          )}
-                        >
-                          {showFullPreview 
-                            ? extractedText 
-                            : extractedText.slice(0, 500) + (extractedText.length > 500 ? "..." : "")}
-                        </div>
+                          <ChevronRight className={`h-4 w-4 transition-transform duration-200 ${showFullPreview ? 'rotate-90' : ''}`} />
+                        </Button>
+                        
+                        {showFullPreview && (
+                          <div className="border rounded-md p-3 overflow-auto text-sm mt-2 bg-muted/40 font-mono max-h-[500px]">
+                            {extractedText}
+                          </div>
+                        )}
                       </div>
                     )}
                     
@@ -799,20 +793,26 @@ export default function PDFTranslator() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-6 max-w-4xl">
-      {renderStepIndicator()}
-      
-      {/* Error Display */}
-      {error && (
-        <Alert variant="destructive" className="mb-4 animate-fadeIn">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {/* Step Content */}
+    <div className="relative">
+      {/* Contenido principal */}
       <div className="transition-all duration-300">
-        {renderStepContent()}
+        {/* Contenido de la app */}
+        <div className="container mx-auto px-4 py-6 max-w-4xl">
+          {renderStepIndicator()}
+          
+          {/* Error Display */}
+          {error && (
+            <Alert variant="destructive" className="mb-4 animate-fadeIn">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* Step Content */}
+          <div className="transition-all duration-300">
+            {renderStepContent()}
+          </div>
+        </div>
       </div>
     </div>
   );
