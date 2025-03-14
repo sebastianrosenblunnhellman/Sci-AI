@@ -18,8 +18,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { extractTextFromPDF } from '@/lib/pdf';
 import { translateChunks } from '@/lib/gemini';
-import { createPDFFromText } from '@/lib/pdf';
+import { createPDFFromMarkdown } from '@/lib/markdownToPdf';
 import { cn } from '@/lib/utils';
+import { PDFViewer } from '@/components/PDFViewer';
 
 const STEPS = [
   { id: 'upload', title: 'Subir PDF', description: 'Sube tu documento PDF científico' },
@@ -51,6 +52,8 @@ export default function PDFTranslator() {
   const [apiKey, setApiKey] = useState('');
   const [isApiKeyValid, setIsApiKeyValid] = useState(false);
   const [isCheckingApiKey, setIsCheckingApiKey] = useState(false);
+  const [pdfPreview, setPdfPreview] = useState<Uint8Array | null>(null);
+  const [isGeneratingPdfPreview, setIsGeneratingPdfPreview] = useState(false);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
@@ -107,32 +110,34 @@ export default function PDFTranslator() {
       try {
         setIsProcessing(true);
         setStepStatus(prev => ({ ...prev, translate: 'processing' }));
-        setProgress(10);
+        setProgress(5); // Iniciar con un valor bajo
         setError(''); // Limpiar errores previos
-
-        // Mostrar un mensaje de feedback inmediato
-        console.log("Iniciando traducción con API Key:", apiKey);
         
         if (!extractedText.trim()) {
           throw new Error('No se pudo extraer texto del PDF.');
         }
-        
-        setProgress(20);
-        
-        // Simular un pequeño retraso para mostrar que está procesando
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        setProgress(40);
 
-        const translated = await translateChunks(extractedText, apiKey);
+        // Traducir el texto usando el nuevo callback de progreso
+        const translated = await translateChunks(
+          extractedText, 
+          apiKey, 
+          (translationProgress) => {
+            // Asegurar que el progreso tenga un rango de 10 a 90 para mostrar un avance gradual
+            const normalizedProgress = Math.floor(10 + (translationProgress * 0.8));
+            setProgress(normalizedProgress);
+          }
+        );
+
         if (!translated.trim()) {
           throw new Error('La traducción falló. Por favor, inténtelo de nuevo.');
         }
+        
         setTranslatedText(translated);
         setProgress(100);
         setStepStatus(prev => ({ ...prev, translate: 'complete', edit: 'pending' }));
         setCurrentStep(2);
       } catch (err) {
+        console.error("Error durante la traducción:", err);
         setError(err instanceof Error ? err.message : 'Ocurrió un error inesperado');
         setStepStatus(prev => ({
           ...prev,
@@ -176,18 +181,62 @@ export default function PDFTranslator() {
 
   const handleDownload = async () => {
     try {
-      const pdfBytes = await createPDFFromText(translatedText);
+      setError(''); // Limpiar errores previos
+      
+      if (!translatedText || translatedText.trim().length === 0) {
+        setError('No hay texto traducido para descargar');
+        return;
+      }
+      
+      console.log("Iniciando conversión a PDF...");
+      console.log("Tamaño del texto a convertir:", translatedText.length, "caracteres");
+      
+      // Añadir un timeout para evitar que la UI se bloquee
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const pdfBytes = await createPDFFromMarkdown(translatedText)
+        .catch((err) => {
+          console.error("Error detallado al crear PDF:", err);
+          throw new Error(`Error al procesar Markdown: ${err.message}`);
+        });
+      
+      if (!pdfBytes || pdfBytes.length === 0) {
+        throw new Error('La generación del PDF falló - no se recibieron datos');
+      }
+      
+      console.log(`PDF generado correctamente: ${pdfBytes.length} bytes`);
+      
+      // Crear el blob y descargar
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `translated-${file?.name || 'document'}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      
+      // Intentar primero abrir en una nueva pestaña, que funciona más consistentemente
+      try {
+        console.log("Abriendo PDF en nueva pestaña...");
+        window.open(url, '_blank');
+        
+        // También ofrecer la descarga
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `traduccion-${file?.name || 'documento'}.pdf`;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        
+        link.click();
+        
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+          document.body.removeChild(link);
+        }, 300);
+      } catch (downloadErr) {
+        console.error("Error en la descarga:", downloadErr);
+        setError('Error al abrir el PDF. Intente con otro navegador o compruebe los ajustes de bloqueo de ventanas emergentes.');
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al generar el PDF');
+      console.error("Error completo:", err);
+      setError(err instanceof Error 
+        ? `Error al generar el PDF: ${err.message}` 
+        : 'Error inesperado al generar el PDF');
     }
   };
 
@@ -196,6 +245,34 @@ export default function PDFTranslator() {
       await navigator.clipboard.writeText(text);
     } catch (err) {
       console.error('Error al copiar al portapapeles:', err);
+    }
+  };
+
+  const generatePdfPreview = async () => {
+    try {
+      setIsGeneratingPdfPreview(true);
+      setError('');
+      
+      if (!translatedText || translatedText.trim().length === 0) {
+        throw new Error('No hay texto traducido para previsualizar');
+      }
+      
+      console.log("Generando vista previa del PDF...");
+      const pdfBytes = await createPDFFromMarkdown(translatedText)
+        .catch((err) => {
+          console.error("Error al crear vista previa:", err);
+          throw new Error(`Error en la vista previa: ${err.message}`);
+        });
+        
+      setPdfPreview(pdfBytes);
+      console.log("Vista previa generada correctamente");
+    } catch (err) {
+      console.error("Error completo al generar vista previa:", err);
+      setError(err instanceof Error 
+        ? `Error en la vista previa: ${err.message}` 
+        : 'Error al generar la vista previa');
+    } finally {
+      setIsGeneratingPdfPreview(false);
     }
   };
 
@@ -255,7 +332,6 @@ export default function PDFTranslator() {
                         Cambiar archivo
                       </Button>
                     </div>
-                    
                     <div className="bg-green-50 border border-green-200 rounded-md p-4 flex items-center gap-3">
                       <CheckCircle2 className="h-5 w-5 text-green-500" />
                       <div>
@@ -283,7 +359,7 @@ export default function PDFTranslator() {
                             {showFullPreview ? 'Mostrar menos' : 'Ver texto completo'}
                           </Button>
                         </div>
-                        <div 
+                        <div
                           className={cn(
                             "border rounded-lg p-4 overflow-auto text-sm mt-2 bg-gray-50 transition-all",
                             showFullPreview ? "max-h-[500px]" : "max-h-60"
@@ -330,14 +406,16 @@ export default function PDFTranslator() {
                       <div>
                         <span className="text-lg font-medium">Procesando con Google Gemini AI</span>
                         <p className="text-sm text-muted-foreground">
-                          Traduciendo {extractedText.length} caracteres de contenido científico
+                          {progress < 10 ? 'Inicializando...' : 
+                           progress === 100 ? 'Finalizado!' : 
+                           `Traduciendo fragmento ${Math.ceil((progress - 10) / 80 * 100)}% completado`}
                         </p>
                       </div>
                     </div>
                     <Progress value={progress} className="h-2" />
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>Iniciando</span>
-                      <span>Procesando</span>
+                      <span>{progress}%</span>
                       <span>Finalizando</span>
                     </div>
                   </div>
@@ -389,7 +467,6 @@ export default function PDFTranslator() {
                           ) : "Verificar"}
                         </Button>
                       </div>
-                      
                       {isApiKeyValid && (
                         <p className="text-xs text-green-600 flex items-center gap-1">
                           <CheckCircle2 className="h-3 w-3" />
@@ -452,7 +529,10 @@ export default function PDFTranslator() {
                     <Copy className="h-4 w-4 mr-2" />
                     Copiar
                   </Button>
-                  <Button onClick={handleDownload}>
+                  <Button
+                    onClick={handleDownload}
+                    disabled={isGeneratingPdfPreview}
+                  >
                     <Download className="h-4 w-4 mr-2" />
                     Descargar PDF
                   </Button>
@@ -463,7 +543,11 @@ export default function PDFTranslator() {
                 {isEditing ? (
                   <textarea
                     value={translatedText}
-                    onChange={(e) => setTranslatedText(e.target.value)}
+                    onChange={(e) => {
+                      setTranslatedText(e.target.value);
+                      // Limpiar la vista previa si se edita el texto
+                      if (pdfPreview) setPdfPreview(null);
+                    }}
                     className="w-full h-full min-h-[600px] font-mono text-sm p-4 focus:outline-none"
                     spellCheck={false}
                   />
@@ -475,6 +559,13 @@ export default function PDFTranslator() {
                   </div>
                 )}
               </div>
+              
+              {/* Añadir el componente de visualización de PDF */}
+              <PDFViewer 
+                pdfData={pdfPreview}
+                isGenerating={isGeneratingPdfPreview}
+                onGenerate={generatePdfPreview}
+              />
             </div>
           </Card>
         );

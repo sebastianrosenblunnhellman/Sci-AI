@@ -189,75 +189,220 @@ export async function createPDFFromText(markdownText: string): Promise<Uint8Arra
     const pdfDoc = await PDFDocument.create();
     const timesRomanFont = await pdfDoc.embedFont(StandardFonts.TimesRoman);
     const timesBoldFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+    const timesItalicFont = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
 
-    // Convert markdown to HTML
-    const htmlContent = await marked(markdownText);
-
-    // Basic HTML to text conversion (you might want to enhance this)
-    const plainText = htmlContent
-      .replace(/<h1.*?>(.*?)<\/h1>/g, '\n# $1\n')
-      .replace(/<h2.*?>(.*?)<\/h2>/g, '\n## $1\n')
-      .replace(/<h3.*?>(.*?)<\/h3>/g, '\n### $1\n')
-      .replace(/<p.*?>(.*?)<\/p>/g, '\n$1\n')
-      .replace(/<img.*?src="(.*?)".*?>/g, '\n[Image]\n') // Placeholder for images
-      .replace(/<.*?>/g, '')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/</g, '<')
-      .replace(/>/g, '>')
-      .replace(/&amp;/g, '&')
-      .trim();
-
-
-    const lines = plainText.split('\n');
-    const fontSize = 12;
+    // Configuración de página
+    const fontSize = 11;
+    const titleSize = 18;
+    const h1Size = 16;
+    const h2Size = 14;
+    const h3Size = 13;
     const margin = 50;
     const lineHeight = fontSize * 1.5;
-
-    let currentPage = pdfDoc.addPage();
-    const { width, height } = currentPage.getSize();
-    let y = height - margin;
-
-    for (const line of lines) {
-      if (line.startsWith('#')) {
-        // Handle headers
-        const level = line.match(/^#+/)[0].length;
-        const text = line.replace(/^#+\s*/, '');
-        const headerSize = fontSize + (3 - level) * 4;
-
-        if (y - headerSize < margin) {
-          currentPage = pdfDoc.addPage();
-          y = height - margin;
+    const pageWidth = 612; // Tamaño carta
+    const pageHeight = 792;
+    const textWidth = pageWidth - (margin * 2);
+    
+    // Convierte markdown a HTML para mejor procesamiento
+    const htmlContent = marked(markdownText);
+    
+    // Función auxiliar para añadir una nueva página
+    const addNewPage = () => {
+      const page = pdfDoc.addPage([pageWidth, pageHeight]);
+      return { page, y: pageHeight - margin };
+    };
+    
+    // Función auxiliar para dibujar texto con saltos automáticos
+    const drawTextWithWrapping = (text: string, x: number, y: number, options: any) => {
+      let currentY = y;
+      const maxWidth = options.maxWidth || textWidth;
+      const words = text.split(' ');
+      let currentLine = '';
+      
+      // Estimación simple: ~6 caracteres por cm en fuente estándar
+      const charsPerLine = Math.floor(maxWidth / (fontSize * 0.5));
+      
+      for (const word of words) {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        
+        // Lógica simple para estimar si el texto cabe en la línea
+        if (testLine.length * (fontSize * 0.5) > maxWidth) {
+          // Dibujar línea actual
+          let page = pdfDoc.getPage(pdfDoc.getPageCount() - 1);
+          
+          // Verificar si necesitamos una nueva página
+          if (currentY - lineHeight < margin) {
+            const newPage = addNewPage();
+            page = newPage.page;
+            currentY = newPage.y;
+          }
+          
+          page.drawText(currentLine, {
+            ...options,
+            x,
+            y: currentY,
+            maxWidth
+          });
+          
+          currentY -= lineHeight;
+          currentLine = word;
+        } else {
+          currentLine = testLine;
         }
-
-        currentPage.drawText(text, {
-          x: margin,
-          y,
-          size: headerSize,
-          font: timesBoldFont
-        });
-
-        y -= headerSize * 1.5;
-      } else if (line.trim()) {
-        // Handle regular text
-        if (y - lineHeight < margin) {
-          currentPage = pdfDoc.addPage();
-          y = height - margin;
-        }
-
-        currentPage.drawText(line.trim(), {
-          x: margin,
-          y,
-          size: fontSize,
-          font: timesRomanFont,
-          lineHeight,
-          maxWidth: width - 2 * margin
-        });
-
-        y -= lineHeight;
       }
-    }
+      
+      // Dibujar la última línea
+      if (currentLine) {
+        let page = pdfDoc.getPage(pdfDoc.getPageCount() - 1);
+        
+        if (currentY - lineHeight < margin) {
+          const newPage = addNewPage();
+          page = newPage.page;
+          currentY = newPage.y;
+        }
+        
+        page.drawText(currentLine, {
+          ...options,
+          x,
+          y: currentY,
+          maxWidth
+        });
+        
+        currentY -= lineHeight;
+      }
+      
+      return currentY;
+    };
 
+    // Función para procesar y convertir el markdown
+    const processMarkdown = () => {
+      let { page, y } = addNewPage();
+      
+      // Separar por líneas y procesar cada una
+      const lines = markdownText.split('\n');
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        // Saltar líneas vacías
+        if (!line.trim()) {
+          y -= lineHeight * 0.7; // Espacio entre párrafos
+          continue;
+        }
+        
+        // Procesar encabezados
+        if (line.startsWith('#')) {
+          const headerMatch = line.match(/^(#+)\s+(.+)$/);
+          if (headerMatch) {
+            const level = headerMatch[1].length;
+            const text = headerMatch[2];
+            
+            // Añadir un espaciado adicional antes de encabezados excepto al principio de página
+            if (y < pageHeight - margin - 20) {
+              y -= lineHeight;
+            }
+            
+            // Determinar tamaño y fuente según nivel del encabezado
+            let headerSize = fontSize;
+            switch (level) {
+              case 1: headerSize = h1Size; break;
+              case 2: headerSize = h2Size; break;
+              case 3: headerSize = h3Size; break;
+              default: headerSize = fontSize + (4 - Math.min(level, 4)); break;
+            }
+            
+            // Verificar si necesitamos nueva página
+            if (y - headerSize * 1.5 < margin) {
+              const newPage = addNewPage();
+              page = newPage.page;
+              y = newPage.y;
+            }
+            
+            // Dibujar encabezado
+            y = drawTextWithWrapping(text, margin, y, {
+              font: timesBoldFont,
+              size: headerSize,
+              maxWidth: textWidth
+            });
+            
+            y -= lineHeight * 0.5; // Espacio después del encabezado
+            continue;
+          }
+        }
+        
+        // Procesar listas
+        if (line.match(/^(\s*[-*+]|\s*\d+\.)\s+/)) {
+          const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/);
+          if (listMatch) {
+            const indentLevel = listMatch[1].length;
+            const marker = listMatch[2];
+            const text = listMatch[3];
+            
+            // Verificar espacio
+            if (y - lineHeight < margin) {
+              const newPage = addNewPage();
+              page = newPage.page;
+              y = newPage.y;
+            }
+            
+            // Dibujar el marcador de lista y luego el texto
+            page.drawText(marker, {
+              x: margin + indentLevel * 10,
+              y,
+              font: timesRomanFont,
+              size: fontSize
+            });
+            
+            y = drawTextWithWrapping(text, margin + indentLevel * 10 + 20, y, {
+              font: timesRomanFont,
+              size: fontSize,
+              maxWidth: textWidth - (indentLevel * 10 + 20)
+            });
+            
+            continue;
+          }
+        }
+        
+        // Procesar texto en negrita e itálica
+        let processedLine = line;
+        const boldMatches = [...line.matchAll(/\*\*(.*?)\*\*/g)];
+        const italicMatches = [...line.matchAll(/\*(.*?)\*/g)];
+        
+        // Si hay formato especial, lo procesamos por partes
+        if (boldMatches.length > 0 || italicMatches.length > 0) {
+          // Lógica simplificada: separamos por estilos básicos
+          const segments = [];
+          let lastIndex = 0;
+          
+          // Aquí iría una lógica más sofisticada para procesar todos los estilos
+          // Para este ejemplo, simplemente detectamos el texto sin formato especial
+          
+          // Simplificación: tratar toda la línea como texto normal
+          // En una implementación completa, procesaríamos cada segmento con su estilo
+          y = drawTextWithWrapping(line.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1'), 
+            margin, y, {
+              font: timesRomanFont,
+              size: fontSize,
+              maxWidth: textWidth
+            });
+          
+          continue;
+        }
+        
+        // Texto normal (párrafo)
+        y = drawTextWithWrapping(line, margin, y, {
+          font: timesRomanFont,
+          size: fontSize,
+          maxWidth: textWidth
+        });
+      }
+    };
+    
+    // Procesar el documento
+    processMarkdown();
+    
     return pdfDoc.save();
+    
   } catch (error) {
     console.error('Error creating PDF:', error);
     throw new Error('Failed to generate the translated PDF. Please try again.');

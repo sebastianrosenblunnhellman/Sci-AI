@@ -1,152 +1,204 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const MAX_CHUNK_SIZE = 4000; // Tamaño máximo de cada fragmento para la API
+// Ajustamos para gemini-2.0-flash que puede manejar hasta 1 millón de tokens
+const APPROX_CHARS_PER_PAGE = 2000; // Estimación promedio de caracteres por página
+const PAGES_PER_CHUNK = 15; // Procesamos 15 páginas por vez
+const MAX_CHUNK_SIZE = APPROX_CHARS_PER_PAGE * PAGES_PER_CHUNK; // Aproximadamente 30,000 caracteres
 
 /**
- * Divide el texto en fragmentos más pequeños para procesar con la API
+ * Divide el texto en fragmentos más grandes para aprovechar gemini-2.0-flash
  */
 function splitIntoChunks(text: string, maxSize: number): string[] {
   if (!text) return [];
   
-  // Dividir por párrafos primero
-  const paragraphs = text.split(/\n\s*\n/);
   const chunks: string[] = [];
-  let currentChunk = '';
   
-  for (const paragraph of paragraphs) {
-    // Si el párrafo por sí solo excede el tamaño máximo, dividirlo por oraciones
-    if (paragraph.length > maxSize) {
-      const sentences = paragraph.split(/(?<=[.!?])\s+/);
-      
-      for (const sentence of sentences) {
-        if (currentChunk.length + sentence.length + 1 <= maxSize) {
-          currentChunk += (currentChunk ? ' ' : '') + sentence;
-        } else {
-          if (currentChunk) chunks.push(currentChunk);
-          
-          // Si una sola oración es mayor que el tamaño máximo, dividirla
-          if (sentence.length > maxSize) {
-            const words = sentence.split(' ');
-            currentChunk = '';
-            
-            for (const word of words) {
-              if (currentChunk.length + word.length + 1 <= maxSize) {
-                currentChunk += (currentChunk ? ' ' : '') + word;
-              } else {
-                if (currentChunk) chunks.push(currentChunk);
-                currentChunk = word;
-              }
-            }
-          } else {
-            currentChunk = sentence;
-          }
-        }
-      }
-    } else if (currentChunk.length + paragraph.length + 2 <= maxSize) {
-      // Añadir el párrafo completo si cabe en el fragmento actual
-      currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
-    } else {
-      // Guardar el fragmento actual y comenzar uno nuevo con este párrafo
-      chunks.push(currentChunk);
-      currentChunk = paragraph;
-    }
+  // Si el texto completo es menor que el tamaño máximo, devolverlo como un único fragmento
+  if (text.length <= maxSize) {
+    return [text];
   }
   
-  if (currentChunk) {
-    chunks.push(currentChunk);
+  // Para textos más grandes, dividir en secciones lógicas (por capítulos o secciones)
+  const sectionBreaks = [
+    /\n\s*?(?:CAPITULO|CAPÍTULO|CHAPTER)\s+\d+/gi, // Capítulos numerados
+    /\n\s*?(?:SECTION|SECCIÓN)\s+\d+/gi,          // Secciones numeradas
+    /\n\s*?\d+\.\s+[A-Z]/g,                      // Secciones con formato "1. Título"
+    /\n\s*?[IVX]+\.\s+[A-Z]/g,                   // Secciones en numeración romana
+    /\n\s*?#{1,3}\s+/g,                          // Encabezados markdown
+    /\n\s*?\*\*\*+\s*?\n/g,                      // Separadores
+    /\n\s*?---+\s*?\n/g,                         // Separadores alternativos
+    /\n\s*?\n\s*?\n/g                            // Párrafos dobles
+  ];
+  
+  // Unir todas las expresiones regulares para encontrar puntos de ruptura naturales
+  const allBreakpoints: number[] = [];
+  sectionBreaks.forEach(regex => {
+    let match;
+    const re = new RegExp(regex);
+    while ((match = re.exec(text)) !== null) {
+      allBreakpoints.push(match.index);
+    }
+  });
+  
+  // Ordenar los puntos de ruptura
+  allBreakpoints.sort((a, b) => a - b);
+  
+  let currentPosition = 0;
+  
+  while (currentPosition < text.length) {
+    let nextBreakpoint = text.length;
+    
+    // Buscar el próximo punto de ruptura dentro del tamaño máximo
+    for (let i = 0; i < allBreakpoints.length; i++) {
+      if (allBreakpoints[i] > currentPosition && 
+          allBreakpoints[i] - currentPosition < maxSize) {
+        nextBreakpoint = allBreakpoints[i];
+      } else if (allBreakpoints[i] > currentPosition + maxSize) {
+        break;
+      }
+    }
+    
+    // Si no encontramos un punto de ruptura adecuado, dividir en el tamaño máximo
+    if (nextBreakpoint === text.length && nextBreakpoint - currentPosition > maxSize) {
+      // Buscar el último punto o salto de línea dentro del límite
+      const segment = text.substring(currentPosition, currentPosition + maxSize);
+      const lastPeriod = Math.max(
+        segment.lastIndexOf('. '),
+        segment.lastIndexOf('.\n'),
+        segment.lastIndexOf('\n\n')
+      );
+      
+      if (lastPeriod > 0) {
+        nextBreakpoint = currentPosition + lastPeriod + 1;
+      } else {
+        // Si no hay un buen punto de ruptura, usar el tamaño máximo
+        nextBreakpoint = currentPosition + maxSize;
+      }
+    }
+    
+    // Añadir el fragmento al array
+    chunks.push(text.substring(currentPosition, nextBreakpoint).trim());
+    currentPosition = nextBreakpoint;
   }
   
   return chunks;
 }
 
-export async function translateText(text: string): Promise<string> {
-  if (!text || text.trim() === '') {
-    throw new Error('El texto a traducir está vacío');
-  }
+/**
+ * Traduce un fragmento de texto usando gemini-2.0-flash
+ */
+async function translateChunkWithRetry(
+  chunk: string, 
+  apiKey: string, 
+  genAI: GoogleGenerativeAI,
+  maxRetries = 2
+): Promise<string> {
+  let retries = 0;
+  let lastError: Error | null = null;
+  
+  while (retries <= maxRetries) {
+    try {
+      // Usar gemini-2.0-flash en lugar de gemini-pro
+      const model = genAI.getGenerativeModel({ 
+        model: "gemini-2.0-flash",
+        generationConfig: {
+          temperature: 0.2,
+          topP: 0.8,
+          maxOutputTokens: 50000, // Permitir respuestas grandes
+        }
+      });
+      
+      // Prompt mejorado que exige explícitamente formato Markdown
+      const prompt = `
+        Traduce este texto científico/técnico del inglés al español, entregando el resultado en formato Markdown bien estructurado.
+        
+        INSTRUCCIONES:
+        - Estructura el texto utilizando elementos Markdown:
+          * # para títulos principales
+          * ## para subtítulos secundarios
+          * ### para encabezados terciarios
+          * **texto** para negritas
+          * *texto* para cursivas
+          * Listas con guiones (-) o numeración (1., 2.)
+          * Tablas con formato Markdown si es necesario
+          * > para citas
+        
+        - Mantén la terminología técnica y científica original cuando sea apropiado
+        - Preserva la estructura jerárquica y organización del texto original
+        - Traduce con fidelidad sin añadir, omitir o interpretar información
+        - Usa español formal y académico
+        - Respeta párrafos y saltos de línea importantes
+        - Mantén el formato de cualquier ecuación, referencia o elemento especial
 
-  try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        IMPORTANTE: Devuelve EXCLUSIVAMENTE el texto traducido en formato Markdown, sin comentarios adicionales ni marcas de código (como \`\`\`markdown).
 
-    const prompt = `
-      Actúa como un traductor científico experto en inglés y español. Tu tarea es traducir con precisión el siguiente texto científico al español, siguiendo estas instrucciones específicas:
-
-      1. Formato y Estructura:
-         - Usa # para títulos principales
-         - ## para subtítulos
-         - ### para secciones menores
-         - Mantén listas con - o números cuando corresponda
-         - Preserva el énfasis usando *cursiva* o **negrita** según corresponda
-
-      2. Limpieza del Texto:
-         - Elimina números de página
-         - Remueve códigos editoriales
-         - Quita información redundante o metadata innecesaria
-         - Elimina encabezados y pies de página repetitivos
-         - Mantén solo el contenido científico relevante
-
-      3. Traducción:
-         - Usa terminología científica estándar en español
-         - Mantén la precisión técnica
-         - Asegura una traducción clara y natural
-         - Preserva el significado exacto de términos técnicos
-         - Adapta el texto para la audiencia hispanohablante
-
-      4. Estructura Final:
-         - Organiza el contenido en secciones claras
-         - Mantén la jerarquía de información
-         - Usa espaciado adecuado entre secciones
-         - Asegura una presentación limpia y profesional
-
-      IMPORTANTE: Devuelve SOLO el texto traducido en formato Markdown, sin añadir marcadores adicionales ni texto explicativo.
-
-      Texto a traducir:
-      ${text}
-    `;
-
-    const result = await model.generateContent(prompt);
-    
-    if (!result || !result.response) {
-      throw new Error('No se recibió respuesta de la API');
+        TEXTO A TRADUCIR:
+        ${chunk}
+      `;
+      
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const translated = response.text();
+      
+      if (!translated || translated.trim().length < chunk.length * 0.1) {
+        throw new Error("La traducción devuelta es demasiado corta en comparación con el texto original");
+      }
+      
+      // Limpiar posibles marcadores de código que la IA podría insertar
+      return translated
+        .replace(/^```\s*markdown\s*\n/i, '')
+        .replace(/\n```\s*$/i, '')
+        .trim();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.warn(`Intento ${retries + 1} fallido para traducir fragmento grande. Error:`, lastError);
+      retries++;
+      
+      // Esperar antes de reintentar (backoff exponencial)
+      if (retries <= maxRetries) {
+        const waitTime = Math.pow(2, retries) * 1500; // 3s, 6s
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
     }
-
-    const response = result.response;
-    const translatedText = response.text().trim();
-    
-    if (!translatedText) {
-      throw new Error('La API devolvió una respuesta vacía');
-    }
-    
-    // Remove any ```markdown or ``` tags if present
-    return translatedText.replace(/^```markdown\n?/, '').replace(/^```\n?/, '').replace(/\n?```$/, '');
-  } catch (error) {
-    console.error('Translation error:', error);
-    throw error;
   }
+  
+  throw lastError || new Error("No se pudo traducir el fragmento después de varios intentos");
 }
 
-export async function translateChunks(text: string, apiKey: string): Promise<string> {
+export async function translateChunks(text: string, apiKey: string, progressCallback?: (progress: number) => void): Promise<string> {
   if (!text.trim()) return '';
   if (!apiKey) throw new Error('Se requiere una API Key válida para la traducción');
   
   try {
-    const chunks = splitIntoChunks(text, MAX_CHUNK_SIZE);
+    // Inicializar la API de Google
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
     
-    const translatedChunks = await Promise.all(
-      chunks.map(async (chunk, index) => {
-        try {
-          const prompt = `Por favor, traduce el siguiente texto científico del inglés al español, manteniendo la estructura, las imágenes y formato. Conserva términos técnicos si es necesario. Asegúrate que el texto sea coherente y fluido:\n\n${chunk}`;
-          
-          const result = await model.generateContent(prompt);
-          const response = await result.response;
-          return response.text();
-        } catch (error) {
-          console.error(`Error en el fragmento ${index + 1}:`, error);
-          throw new Error(`Error al traducir el fragmento ${index + 1}. Por favor, verifica tu API Key e inténtalo de nuevo.`);
+    // Dividir el texto en fragmentos más grandes
+    const chunks = splitIntoChunks(text, MAX_CHUNK_SIZE);
+    console.log(`Texto dividido en ${chunks.length} fragmentos grandes para traducción. Aproximadamente ${chunks.length * PAGES_PER_CHUNK} páginas.`);
+    
+    // Array para almacenar los resultados
+    const translatedChunks: string[] = [];
+    
+    // Procesar fragmentos secuencialmente
+    for (let i = 0; i < chunks.length; i++) {
+      try {
+        const chunk = chunks[i];
+        console.log(`Traduciendo fragmento ${i+1}/${chunks.length} (${chunk.length} caracteres)`);
+        
+        const translated = await translateChunkWithRetry(chunk, apiKey, genAI);
+        translatedChunks.push(translated);
+        
+        // Notificar progreso si hay un callback
+        if (progressCallback) {
+          const progress = Math.round(((i + 1) / chunks.length) * 100);
+          progressCallback(progress);
         }
-      })
-    );
+      } catch (error) {
+        console.error(`Error en el fragmento ${i + 1} de ${chunks.length}:`, error);
+        throw new Error(`Error al procesar el fragmento ${i + 1}. El modelo puede estar experimentando dificultades con esta sección. Por favor, intente nuevamente.`);
+      }
+    }
     
     return translatedChunks.join('\n\n');
   } catch (error) {
