@@ -92,7 +92,7 @@ export async function extractTextFromPDF(
           pdf.getPage(j).then(page =>
             page.getTextContent().then(content => {
               const pageText = content.items
-                .map((item: TextContentItem) => {
+                .map((item: any) => {
                   if (typeof item.str === 'string') {
                     return item.str;
                   }
