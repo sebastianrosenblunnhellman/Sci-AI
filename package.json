@@ -84,8 +84,7 @@
     "@babel/preset-env": "^7.22.10",
     "@babel/preset-react": "^7.22.5",
     "cross-env": "^7.0.3",
-    "rimraf": "^5.0.1",
-    "wrangler": "^3.22.1"
+    "rimraf": "^5.0.1"
   },
   "engines": {
     "node": ">=18.0.0",

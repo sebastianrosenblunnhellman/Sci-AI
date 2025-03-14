@@ -1,14 +1,16 @@
+// Delete this file if you don't need custom Babel configuration
 {
   "presets": [
-    ["@babel/preset-env", {
-      "targets": {
-        "browsers": [">0.3%", "not dead", "not op_mini all"],
-        "node": "current"
-      },
-      "modules": "commonjs",
-      "loose": true
-    }],
-    "@babel/preset-react"
+    [
+      "next/babel",
+      {
+        "preset-typescript": {
+          "onlyRemoveTypeImports": true,
+          "allowNamespaces": true,
+          "allowDeclareFields": true
+        }
+      }
+    ]
   ],
   "plugins": [],
   "assumptions": {

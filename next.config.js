@@ -4,7 +4,6 @@ const nextConfig = {
   swcMinify: true,
   images: {
     domains: [], // Agrega aquí dominios para imágenes externas si los necesitas
-    unoptimized: true, // Evita problemas con el sistema de imágenes de Next.js
     // Necesario para compatibilidad con Cloudflare Pages
     loader: 'default',
     remotePatterns: [],
@@ -21,6 +20,7 @@ const nextConfig = {
     // Optimiza compatibilidad con Cloudflare
     optimizeCss: true,
     scrollRestoration: true,
+    forceSwcTransforms: true, // Force SWC transforms even with custom Babel config
   },
   // Configuración de headers de seguridad
   async headers() {
@@ -44,9 +44,6 @@ const nextConfig = {
       },
     ]
   },
-  // Si se detecta Cloudflare Pages como entorno de ejecución
-  // Esta configuración ayuda con el manejo de workers
-  output: 'export',
 }
 
-module.exports = nextConfig
+module.exports = nextConfig;
