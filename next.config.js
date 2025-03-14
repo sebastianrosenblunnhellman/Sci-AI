@@ -45,7 +45,9 @@ const nextConfig = {
   experimental: {
     forceSwcTransforms: true,
     esmExternals: false, // Changed from 'loose' to false
-    legacyBrowsers: true
+    // Removed the invalid legacyBrowsers option
+    optimizeCss: false,
+    scrollRestoration: true
   }
 };
 

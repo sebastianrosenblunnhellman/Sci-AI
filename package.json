@@ -7,8 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "vercel-build": "npm run clean && next build",old_space_size=4096 npm run clean && next build",
-    "clean": "rm -rf .next"
+    "vercel-build": "cross-env NODE_OPTIONS=--max_old_space_size=4096 npm run clean && next build",
+    "clean": "rimraf .next"
   },
   "dependencies": {
     "@google/generative-ai": "^0.2.1",
@@ -82,13 +82,13 @@
     "@babel/core": "^7.22.10",
     "@babel/preset-env": "^7.22.10",
     "@babel/preset-react": "^7.22.5",
-  }, "cross-env": "^7.0.3",
-  "browserslist": [   "rimraf": "^5.0.1"
-    ">0.2%",  }
-
-
-
-
-
-
-}  ]    "not op_mini all"    "not ie <= 11",    "not dead",}
+    "cross-env": "^7.0.3",
+    "rimraf": "^5.0.1"
+  },
+  "browserslist": [
+    ">0.2%",
+    "not dead",
+    "not ie <= 11",
+    "not op_mini all"
+  ]
+}
