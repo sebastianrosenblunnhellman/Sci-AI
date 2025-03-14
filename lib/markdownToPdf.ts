@@ -439,7 +439,7 @@ export async function createPDFFromMarkdown(markdownText: string): Promise<Uint8
             const columnWidths = [];
             
             // Calcular ancho de columnas (distribución equitativa)
-            const numColumns = Math.max(header.length, ...rows.map(row => row.length));
+            const numColumns = Math.max(header.length, ...rows.map((row: any[]) => row.length));
             const columnWidth = contentWidth / numColumns;
             
             // Dibujar encabezados
