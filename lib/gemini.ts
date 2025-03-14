@@ -1,6 +1,63 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI("AIzaSyAW4iM1HEkhmdJRkfk0DvVF4KqKfcM5bM4");
+const MAX_CHUNK_SIZE = 4000; // Tamaño máximo de cada fragmento para la API
+
+/**
+ * Divide el texto en fragmentos más pequeños para procesar con la API
+ */
+function splitIntoChunks(text: string, maxSize: number): string[] {
+  if (!text) return [];
+  
+  // Dividir por párrafos primero
+  const paragraphs = text.split(/\n\s*\n/);
+  const chunks: string[] = [];
+  let currentChunk = '';
+  
+  for (const paragraph of paragraphs) {
+    // Si el párrafo por sí solo excede el tamaño máximo, dividirlo por oraciones
+    if (paragraph.length > maxSize) {
+      const sentences = paragraph.split(/(?<=[.!?])\s+/);
+      
+      for (const sentence of sentences) {
+        if (currentChunk.length + sentence.length + 1 <= maxSize) {
+          currentChunk += (currentChunk ? ' ' : '') + sentence;
+        } else {
+          if (currentChunk) chunks.push(currentChunk);
+          
+          // Si una sola oración es mayor que el tamaño máximo, dividirla
+          if (sentence.length > maxSize) {
+            const words = sentence.split(' ');
+            currentChunk = '';
+            
+            for (const word of words) {
+              if (currentChunk.length + word.length + 1 <= maxSize) {
+                currentChunk += (currentChunk ? ' ' : '') + word;
+              } else {
+                if (currentChunk) chunks.push(currentChunk);
+                currentChunk = word;
+              }
+            }
+          } else {
+            currentChunk = sentence;
+          }
+        }
+      }
+    } else if (currentChunk.length + paragraph.length + 2 <= maxSize) {
+      // Añadir el párrafo completo si cabe en el fragmento actual
+      currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
+    } else {
+      // Guardar el fragmento actual y comenzar uno nuevo con este párrafo
+      chunks.push(currentChunk);
+      currentChunk = paragraph;
+    }
+  }
+  
+  if (currentChunk) {
+    chunks.push(currentChunk);
+  }
+  
+  return chunks;
+}
 
 export async function translateText(text: string): Promise<string> {
   if (!text || text.trim() === '') {
@@ -67,57 +124,36 @@ export async function translateText(text: string): Promise<string> {
   }
 }
 
-export async function translateChunks(text: string, chunkSize: number = 2000): Promise<string> {
-  if (!text || text.trim() === '') {
-    throw new Error('El texto a traducir está vacío');
-  }
-
+export async function translateChunks(text: string, apiKey: string): Promise<string> {
+  if (!text.trim()) return '';
+  if (!apiKey) throw new Error('Se requiere una API Key válida para la traducción');
+  
   try {
-    const chunks = [];
-    let currentChunk = '';
+    const chunks = splitIntoChunks(text, MAX_CHUNK_SIZE);
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
     
-    const paragraphs = text.split(/\n\n+/);
-    
-    for (const paragraph of paragraphs) {
-      if ((currentChunk + paragraph).length > chunkSize && currentChunk) {
-        chunks.push(currentChunk);
-        currentChunk = paragraph;
-      } else {
-        currentChunk = currentChunk ? `${currentChunk}\n\n${paragraph}` : paragraph;
-      }
-    }
-    if (currentChunk) {
-      chunks.push(currentChunk);
-    }
-
     const translatedChunks = await Promise.all(
       chunks.map(async (chunk, index) => {
-        const maxRetries = 3;
-        let lastError: Error | null = null; // Explicitly type lastError
-        
-        for (let retries = 0; retries < maxRetries; retries++) {
-          try {
-            const translated = await translateText(chunk);
-            if (!translated) {
-              throw new Error('Traducción vacía recibida');
-            }
-            return translated;
-          } catch (error) {
-            lastError = error instanceof Error ? error : new Error(String(error)); // Ensure lastError is an Error
-            if (retries < maxRetries - 1) {
-              await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries)));
-              continue;
-            }
-          }
+        try {
+          const prompt = `Por favor, traduce el siguiente texto científico del inglés al español, manteniendo la estructura, las imágenes y formato. Conserva términos técnicos si es necesario. Asegúrate que el texto sea coherente y fluido:\n\n${chunk}`;
+          
+          const result = await model.generateContent(prompt);
+          const response = await result.response;
+          return response.text();
+        } catch (error) {
+          console.error(`Error en el fragmento ${index + 1}:`, error);
+          throw new Error(`Error al traducir el fragmento ${index + 1}. Por favor, verifica tu API Key e inténtalo de nuevo.`);
         }
-        
-        throw new Error(`No se pudo traducir el fragmento ${index + 1} después de ${maxRetries} intentos: ${lastError?.message || 'Error desconocido'}`);
       })
     );
-
+    
     return translatedChunks.join('\n\n');
   } catch (error) {
-    console.error('Error in chunk translation:', error);
-    throw error;
+    console.error('Error en traducción:', error);
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('Error durante la traducción. Por favor, verifica tu API Key e inténtalo de nuevo.');
   }
 }

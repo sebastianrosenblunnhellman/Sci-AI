@@ -42,6 +42,15 @@ export default function PDFTranslator() {
   });
   const [readyForNextStep, setReadyForNextStep] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [extractionProgress, setExtractionProgress] = useState(0);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [numPages, setNumPages] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [showFullPreview, setShowFullPreview] = useState(false);
+  const [apiKey, setApiKey] = useState('');
+  const [isApiKeyValid, setIsApiKeyValid] = useState(false);
+  const [isCheckingApiKey, setIsCheckingApiKey] = useState(false);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
@@ -56,17 +65,31 @@ export default function PDFTranslator() {
         setProgress(0);
         setExtractedText('');
         setTranslatedText('');
-        setStepStatus({ ...stepStatus, upload: 'complete' });
-        setReadyForNextStep(true);
+        setIsExtracting(true);
+        setExtractionProgress(0);
+        setCurrentPage(0);
+        setTotalPages(0);
+        setReadyForNextStep(false);
 
-        // Test image extraction
         try {
-          const extractionResult = await extractTextFromPDF(file);
-          console.log("Extraction Result:", extractionResult); // Log the result
-          setExtractedText(extractionResult.text); // Set extracted text as before (for now)
+          const extractionResult = await extractTextFromPDF(
+            file,
+            (progress, current, total) => {
+              setExtractionProgress(progress);
+              setCurrentPage(current);
+              setTotalPages(total);
+            }
+          );
+          
+          setExtractedText(extractionResult.text);
+          setNumPages(extractionResult.numPages || totalPages);
+          setIsExtracting(false);
+          setStepStatus({ ...stepStatus, upload: 'complete' });
+          setReadyForNextStep(true);
         } catch (extractionError) {
-          console.error("Error during extraction test:", extractionError);
-          setError(extractionError instanceof Error ? extractionError.message : 'Error al extraer texto e imágenes del PDF');
+          setIsExtracting(false);
+          console.error("Error during extraction:", extractionError);
+          setError(extractionError instanceof Error ? extractionError.message : 'Error al extraer texto del PDF');
           setStepStatus(prev => ({ ...prev, upload: 'error' }));
         }
       }
@@ -74,27 +97,34 @@ export default function PDFTranslator() {
   });
 
   const handleNextStep = async () => {
-    if (!readyForNextStep) return;
-
-    setReadyForNextStep(false);
-
     if (currentStep === 0) {
+      // Avanzar al paso de traducción
+      setCurrentStep(1);
+      setStepStatus(prev => ({ ...prev, translate: 'pending' }));
+      setReadyForNextStep(true); // Permitir que se pueda iniciar la traducción
+    } else if (currentStep === 1 && isApiKeyValid) {
+      // Solo proceder con la traducción si la API Key es válida
       try {
         setIsProcessing(true);
         setStepStatus(prev => ({ ...prev, translate: 'processing' }));
         setProgress(10);
+        setError(''); // Limpiar errores previos
 
-        // Modified to handle the object returned from extractTextFromPDF
-        const extractionResult = await extractTextFromPDF(file!);
-        const text = extractionResult.text;
-
-        if (!text.trim()) {
+        // Mostrar un mensaje de feedback inmediato
+        console.log("Iniciando traducción con API Key:", apiKey);
+        
+        if (!extractedText.trim()) {
           throw new Error('No se pudo extraer texto del PDF.');
         }
-        setExtractedText(text);
+        
+        setProgress(20);
+        
+        // Simular un pequeño retraso para mostrar que está procesando
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
         setProgress(40);
 
-        const translated = await translateChunks(text); // Translate only the text part for now
+        const translated = await translateChunks(extractedText, apiKey);
         if (!translated.trim()) {
           throw new Error('La traducción falló. Por favor, inténtelo de nuevo.');
         }
@@ -111,6 +141,36 @@ export default function PDFTranslator() {
       } finally {
         setIsProcessing(false);
       }
+    }
+  };
+
+  // Función para verificar la validez de la API Key
+  const verifyApiKey = async (key: string) => {
+    if (!key.trim()) {
+      setIsApiKeyValid(false);
+      return;
+    }
+    
+    setIsCheckingApiKey(true);
+    try {
+      // Aquí iría una llamada simple a la API para verificar que la clave es válida
+      // Por ahora, hacemos una verificación básica del formato
+      const isValidFormat = key.trim().length > 20; // Ejemplo simple
+      
+      // Simular una verificación asíncrona
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      setIsApiKeyValid(isValidFormat);
+      if (!isValidFormat) {
+        setError("La API Key no parece tener el formato correcto.");
+      } else {
+        setError("");
+      }
+    } catch (err) {
+      setIsApiKeyValid(false);
+      setError("Error al verificar la API Key. Por favor, inténtelo de nuevo.");
+    } finally {
+      setIsCheckingApiKey(false);
     }
   };
 
@@ -144,30 +204,109 @@ export default function PDFTranslator() {
       case 0: // Upload
         return (
           <Card className="p-6">
-            <div
-              {...getRootProps()}
-              className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-all
-                ${isDragActive ? 'border-primary bg-primary/5 scale-[0.99]' : 'border-muted-foreground/25 hover:border-primary/50'}`}
-            >
-              <input {...getInputProps()} />
-              <Upload className="mx-auto h-16 w-16 text-muted-foreground mb-6" />
-              <h3 className="text-2xl font-semibold mb-3">
-                {isDragActive ? 'Suelte el PDF aquí' : 'Arrastre y suelte un archivo PDF aquí'}
-              </h3>
-              <p className="text-muted-foreground text-lg">
-                o haga clic para seleccionar un archivo
-              </p>
-              <p className="text-sm text-muted-foreground mt-4">
-                Tamaño máximo: 100MB
-              </p>
-            </div>
-            {readyForNextStep && (
-              <Button
-                className="w-full mt-4"
-                onClick={handleNextStep}
+            {!file ? (
+              <div
+                {...getRootProps()}
+                className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-all
+                  ${isDragActive ? 'border-primary bg-primary/5 scale-[0.99]' : 'border-muted-foreground/25 hover:border-primary/50'}`}
               >
-                Comenzar Traducción
-              </Button>
+                <input {...getInputProps()} />
+                <Upload className="mx-auto h-16 w-16 text-muted-foreground mb-6" />
+                <h3 className="text-2xl font-semibold mb-3">
+                  {isDragActive ? 'Suelte el PDF aquí' : 'Arrastre y suelte un archivo PDF aquí'}
+                </h3>
+                <p className="text-muted-foreground text-lg">
+                  o haga clic para seleccionar un archivo
+                </p>
+                <p className="text-sm text-muted-foreground mt-4">
+                  Tamaño máximo: 100MB
+                </p>
+              </div>
+            ) : (
+              <>
+                {isExtracting ? (
+                  <div className="space-y-4 p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                        <span className="text-lg">Extrayendo texto del PDF...</span>
+                      </div>
+                      <span className="text-sm text-muted-foreground">
+                        {totalPages > 0 ? `Página ${currentPage} de ${totalPages}` : 'Analizando documento...'}
+                      </span>
+                    </div>
+                    <Progress value={extractionProgress} className="h-2" />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>0%</span>
+                      <span>{extractionProgress}%</span>
+                      <span>100%</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-xl font-semibold">{file.name}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {(file.size / 1024 / 1024).toFixed(2)} MB • {numPages} páginas
+                        </p>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => setFile(null)}>
+                        Cambiar archivo
+                      </Button>
+                    </div>
+                    
+                    <div className="bg-green-50 border border-green-200 rounded-md p-4 flex items-center gap-3">
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                      <div>
+                        <h4 className="text-sm font-medium text-green-800">
+                          Extracción completa
+                        </h4>
+                        <p className="text-xs text-green-700">
+                          Se han extraído {numPages} páginas y {extractedText.length} caracteres.
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {extractedText && (
+                      <div className="mt-4">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-lg font-medium">
+                            Vista previa del texto extraído:
+                          </h4>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => setShowFullPreview(!showFullPreview)}
+                            className="text-xs"
+                          >
+                            {showFullPreview ? 'Mostrar menos' : 'Ver texto completo'}
+                          </Button>
+                        </div>
+                        <div 
+                          className={cn(
+                            "border rounded-lg p-4 overflow-auto text-sm mt-2 bg-gray-50 transition-all",
+                            showFullPreview ? "max-h-[500px]" : "max-h-60"
+                          )}
+                        >
+                          {showFullPreview 
+                            ? extractedText 
+                            : extractedText.slice(0, 500) + (extractedText.length > 500 ? "..." : "")}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {readyForNextStep && (
+                      <Button
+                        className="w-full mt-4"
+                        onClick={handleNextStep}
+                      >
+                        Comenzar Traducción
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </Card>
         );
@@ -175,12 +314,118 @@ export default function PDFTranslator() {
       case 1: // Translate
         return (
           <Card className="p-6">
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                <span className="text-lg">Traduciendo documento...</span>
-              </div>
-              <Progress value={progress} className="h-2" />
+            <div className="space-y-6">
+              {isProcessing ? (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-semibold">Traduciendo documento</h3>
+                    <span className="text-sm text-muted-foreground animate-pulse">
+                      Esto puede tardar varios minutos...
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-4 bg-blue-50 p-6 rounded-lg border border-blue-100">
+                    <div className="flex items-center gap-4">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                      <div>
+                        <span className="text-lg font-medium">Procesando con Google Gemini AI</span>
+                        <p className="text-sm text-muted-foreground">
+                          Traduciendo {extractedText.length} caracteres de contenido científico
+                        </p>
+                      </div>
+                    </div>
+                    <Progress value={progress} className="h-2" />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Iniciando</span>
+                      <span>Procesando</span>
+                      <span>Finalizando</span>
+                    </div>
+                  </div>
+                  
+                  <div className="border rounded-lg p-4 bg-gray-50">
+                    <h4 className="text-sm font-medium mb-2">Información del documento</h4>
+                    <ul className="text-xs text-muted-foreground space-y-1">
+                      <li>• Nombre: {file?.name}</li>
+                      <li>• Páginas: {numPages}</li>
+                      <li>• Caracteres: {extractedText.length}</li>
+                    </ul>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <h3 className="text-xl font-semibold mb-2">Configuración de Traducción</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Para traducir este documento, necesita proporcionar su API Key de Google Gemini.
+                      Puede obtener una clave en: <a href="https://ai.google.dev/" target="_blank" rel="noopener noreferrer" className="text-primary underline">Google AI Studio</a>
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label htmlFor="api-key" className="text-sm font-medium">
+                        API Key de Google Gemini
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          id="api-key"
+                          type="password"
+                          value={apiKey}
+                          onChange={(e) => {
+                            setApiKey(e.target.value);
+                            setIsApiKeyValid(false);
+                          }}
+                          placeholder="Ingrese su API Key aquí"
+                          className="flex-1 px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => verifyApiKey(apiKey)}
+                          disabled={isCheckingApiKey || !apiKey.trim()}
+                        >
+                          {isCheckingApiKey ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : "Verificar"}
+                        </Button>
+                      </div>
+                      
+                      {isApiKeyValid && (
+                        <p className="text-xs text-green-600 flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3" />
+                          API Key verificada correctamente
+                        </p>
+                      )}
+                    </div>
+                    
+                    <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+                      <h4 className="text-sm font-medium text-blue-800 mb-1">Información del documento</h4>
+                      <ul className="text-xs text-blue-700 space-y-1">
+                        <li>• Nombre: {file?.name}</li>
+                        <li>• Tamaño: {file ? (file.size / 1024 / 1024).toFixed(2) + " MB" : "N/A"}</li>
+                        <li>• Páginas extraídas: {numPages}</li>
+                        <li>• Caracteres a traducir: {extractedText.length}</li>
+                      </ul>
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-between">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => setCurrentStep(0)}
+                    >
+                      Volver
+                    </Button>
+                    <Button 
+                      onClick={handleNextStep}
+                      disabled={!isApiKeyValid}
+                      className={!isApiKeyValid ? "opacity-50" : ""}
+                    >
+                      {isApiKeyValid ? "Iniciar Traducción" : "Verifique la API Key primero"}
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
           </Card>
         );

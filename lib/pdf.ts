@@ -1,256 +1,265 @@
-    import * as pdfjsLib from 'pdfjs-dist';
-    import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-    import { marked } from 'marked';
+import * as pdfjsLib from 'pdfjs-dist';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { marked } from 'marked';
 
-    // Initialize PDF.js worker
-    if (typeof window !== 'undefined') {
-      const worker = new Worker(new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url));
-      pdfjsLib.GlobalWorkerOptions.workerPort = worker;
+// Initialize PDF.js worker
+if (typeof window !== 'undefined') {
+  const worker = new Worker(new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url));
+  pdfjsLib.GlobalWorkerOptions.workerPort = worker;
+}
+
+// --- Helper Function: Convert ArrayBuffer to Base64 ---
+function arrayBufferToBase64(buffer: ArrayBuffer, imageType: string): string {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return `data:${imageType};base64,${btoa(binary)}`;
+}
+
+// --- Type Definitions ---
+interface ExtractedImage {
+  page: number;
+  dataUrl: string;
+}
+
+interface TextContentItem {
+  str: string;
+  dir: string;
+  width: number;
+  height: number;
+  transform: number[];
+  fontName: string;
+  hasEOL: boolean;
+}
+
+// --- Main Extraction Function ---
+export async function extractTextFromPDF(
+  file: File, 
+  progressCallback?: (progress: number, currentPage: number, totalPages: number) => void
+): Promise<{ text: string; images: ExtractedImage[]; numPages: number }> {
+  try {
+    if (!file.type.includes('pdf')) {
+      throw new Error('Invalid file type. Please upload a PDF file.');
     }
 
-    // --- Helper Function: Convert ArrayBuffer to Base64 ---
-    function arrayBufferToBase64(buffer: ArrayBuffer, imageType: string): string {
-      let binary = '';
-      const bytes = new Uint8Array(buffer);
-      const len = bytes.byteLength;
-      for (let i = 0; i < len; i++) {
-        binary += String.fromCharCode(bytes[i]);
+    if (file.size > 100 * 1024 * 1024) {
+      throw new Error('File is too large. Maximum size is 100MB.');
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+
+    if (arrayBuffer.byteLength === 0) {
+      throw new Error('The PDF file appears to be empty.');
+    }
+
+    const loadingTask = pdfjsLib.getDocument({
+      data: arrayBuffer,
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      useSystemFonts: true
+    });
+
+    const pdf: pdfjsLib.PDFDocumentProxy = await loadingTask.promise;
+
+    if (!pdf) {
+      throw new Error('Failed to load PDF document. The file might be corrupted.');
+    }
+
+    let fullText = '';
+    const images: ExtractedImage[] = [];
+    const numPages = pdf.numPages;
+
+    if (numPages === 0) {
+      throw new Error('The PDF document contains no pages.');
+    }
+    
+    // Report initial progress
+    if (progressCallback) {
+      progressCallback(0, 0, numPages);
+    }
+
+    const batchSize = 5; // Process 5 pages at a time for more frequent updates
+
+    for (let i = 1; i <= numPages; i += batchSize) {
+      const lastPage = Math.min(i + batchSize - 1, numPages);
+      const batchPromises = [];
+
+      for (let j = i; j <= lastPage; j++) {
+        batchPromises.push(
+          pdf.getPage(j).then(page =>
+            page.getTextContent().then(content => {
+              const pageText = content.items
+                .map((item: TextContentItem) => {
+                  if (typeof item.str === 'string') {
+                    return item.str;
+                  }
+                  return '';
+                })
+                .join(' ');
+
+              return pageText;
+            })
+          )
+        );
       }
-      return `data:${imageType};base64,${btoa(binary)}`;
+
+      const batchResults = await Promise.all(batchPromises);
+      fullText += batchResults.join('\n\n');
+      
+      // Report progress after each batch
+      if (progressCallback) {
+        const currentProgress = Math.min(100, Math.round((lastPage / numPages) * 100));
+        progressCallback(currentProgress, lastPage, numPages);
+      }
     }
 
-    // --- Type Definitions ---
-    interface ExtractedImage {
-      page: number;
-      dataUrl: string;
+    const cleanedText = fullText
+      .replace(/\s+/g, ' ')
+      .replace(/\n\s*\n/g, '\n\n')
+      .replace(/[^\S\n]+/g, ' ')
+      .trim();
+
+    if (!cleanedText && images.length === 0) {
+      throw new Error('No text or images could be extracted from the PDF. The document might be scanned or contain only non-extractable content.');
     }
 
-    interface TextContentItem {
-      str: string;
-      dir: string;
-      width: number;
-      height: number;
-      transform: number[];
-      fontName: string;
-      hasEOL: boolean;
+    return { text: cleanedText, images, numPages };
+  } catch (error) {
+    console.error('PDF extraction error:', error);
+
+    if (error instanceof Error) {
+      if (error.message.includes('Invalid file type')) {
+        throw new Error('Please upload a valid PDF file.');
+      } else if (error.message.includes('File is too large')) {
+        throw new Error('The PDF file is too large. Please try a smaller file (max 100MB).');
+      } else if (error.message.includes('corrupted')) {
+        throw new Error('The PDF file appears to be corrupted. Please try a different file.');
+      } else if (error.message.includes('scanned')) {
+        throw new Error('This appears to be a scanned PDF. Text and image extraction may not be fully supported for scanned PDFs.');
+      }
+      throw error;
     }
 
-    // --- Main Extraction Function ---
-    export async function extractTextFromPDF(file: File): Promise<{ text: string; images: ExtractedImage[] }> {
+    throw new Error('Failed to extract content from the PDF. Please try a different file.');
+  }
+}
+
+// --- Image Extraction Function ---
+async function extractImagesFromPage(page: pdfjsLib.PDFPageProxy, pageNumber: number): Promise<ExtractedImage[]> {
+  const images: ExtractedImage[] = [];
+  const operatorList: pdfjsLib.OperatorList = await page.getOperatorList();
+
+  for (let i = 0; i < operatorList.fnArray.length; i++) {
+    const op = operatorList.fnArray[i];
+    if (op === pdfjsLib.OPS.paintImageXObject || op === pdfjsLib.OPS.paintXObject) {
+      const imageName = operatorList.argsArray[i][0];
+
+      // Type assertion to bypass TypeScript error (temporary)
+      const pageAny: any = page;
+
+      let img;
+
       try {
-        if (!file.type.includes('pdf')) {
-          throw new Error('Invalid file type. Please upload a PDF file.');
+        //Try to get the image using getXObject
+        img = await pageAny.getXObject(imageName);
+      }
+      catch (error) {
+        //If getXObject fails, try to get the image from the page's objects directly
+        console.log("getXObject failed. Trying alternative method", error)
+        img = pageAny.objs.get(imageName);
+      }
+
+
+      if (img && img.data) {
+        const imageType = img.subtype === 'ImageB' ? 'image/bmp' : img.subtype === 'ImageC' ? 'image/jpeg' : 'image/png';
+        const base64Image = arrayBufferToBase64(img.data, imageType);
+        images.push({ page: pageNumber, dataUrl: base64Image });
+      }
+    }
+  }
+  return images;
+}
+
+// --- PDF Creation Function ---
+export async function createPDFFromText(markdownText: string): Promise<Uint8Array> {
+  try {
+    const pdfDoc = await PDFDocument.create();
+    const timesRomanFont = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+    const timesBoldFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+
+    // Convert markdown to HTML
+    const htmlContent = await marked(markdownText);
+
+    // Basic HTML to text conversion (you might want to enhance this)
+    const plainText = htmlContent
+      .replace(/<h1.*?>(.*?)<\/h1>/g, '\n# $1\n')
+      .replace(/<h2.*?>(.*?)<\/h2>/g, '\n## $1\n')
+      .replace(/<h3.*?>(.*?)<\/h3>/g, '\n### $1\n')
+      .replace(/<p.*?>(.*?)<\/p>/g, '\n$1\n')
+      .replace(/<img.*?src="(.*?)".*?>/g, '\n[Image]\n') // Placeholder for images
+      .replace(/<.*?>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/</g, '<')
+      .replace(/>/g, '>')
+      .replace(/&amp;/g, '&')
+      .trim();
+
+
+    const lines = plainText.split('\n');
+    const fontSize = 12;
+    const margin = 50;
+    const lineHeight = fontSize * 1.5;
+
+    let currentPage = pdfDoc.addPage();
+    const { width, height } = currentPage.getSize();
+    let y = height - margin;
+
+    for (const line of lines) {
+      if (line.startsWith('#')) {
+        // Handle headers
+        const level = line.match(/^#+/)[0].length;
+        const text = line.replace(/^#+\s*/, '');
+        const headerSize = fontSize + (3 - level) * 4;
+
+        if (y - headerSize < margin) {
+          currentPage = pdfDoc.addPage();
+          y = height - margin;
         }
 
-        if (file.size > 100 * 1024 * 1024) {
-          throw new Error('File is too large. Maximum size is 100MB.');
-        }
-
-        const arrayBuffer = await file.arrayBuffer();
-
-        if (arrayBuffer.byteLength === 0) {
-          throw new Error('The PDF file appears to be empty.');
-        }
-
-        const loadingTask = pdfjsLib.getDocument({
-          data: arrayBuffer,
-          useWorkerFetch: false,
-          isEvalSupported: false,
-          useSystemFonts: true
+        currentPage.drawText(text, {
+          x: margin,
+          y,
+          size: headerSize,
+          font: timesBoldFont
         });
 
-        const pdf: pdfjsLib.PDFDocumentProxy = await loadingTask.promise;
-
-        if (!pdf) {
-          throw new Error('Failed to load PDF document. The file might be corrupted.');
+        y -= headerSize * 1.5;
+      } else if (line.trim()) {
+        // Handle regular text
+        if (y - lineHeight < margin) {
+          currentPage = pdfDoc.addPage();
+          y = height - margin;
         }
 
-        let fullText = '';
-        const images: ExtractedImage[] = [];
-        const numPages = pdf.numPages;
+        currentPage.drawText(line.trim(), {
+          x: margin,
+          y,
+          size: fontSize,
+          font: timesRomanFont,
+          lineHeight,
+          maxWidth: width - 2 * margin
+        });
 
-        if (numPages === 0) {
-          throw new Error('The PDF document contains no pages.');
-        }
-
-        for (let i = 1; i <= numPages; i++) {
-          const page: pdfjsLib.PDFPageProxy = await pdf.getPage(i);
-
-          if (!page) {
-            console.warn(`Failed to load page ${i}`);
-            continue;
-          }
-
-          try {
-            const textContent: pdfjsLib.TextContent = await page.getTextContent();
-            const pageText = textContent.items
-              .map((item: TextContentItem) => { // Explicit type for textContent item
-                if (typeof item.str === 'string') {
-                  return item.str;
-                }
-                // Handle other cases if necessary (though less common)
-                return '';
-              })
-              .join(' ');
-
-            fullText += `${pageText}\n\n`;
-
-            // Extract images from the page
-            const pageImages = await extractImagesFromPage(page, i);
-            images.push(...pageImages);
-
-
-          } catch (pageError) {
-            console.error(`Error extracting content from page ${i}:`, pageError);
-          }
-        }
-
-        const cleanedText = fullText
-          .replace(/\s+/g, ' ')
-          .replace(/\n\s*\n/g, '\n\n')
-          .replace(/[^\S\n]+/g, ' ')
-          .trim();
-
-        if (!cleanedText && images.length === 0) {
-          throw new Error('No text or images could be extracted from the PDF. The document might be scanned or contain only non-extractable content.');
-        }
-
-        return { text: cleanedText, images };
-      } catch (error) {
-        console.error('PDF extraction error:', error);
-
-        if (error instanceof Error) {
-          if (error.message.includes('Invalid file type')) {
-            throw new Error('Please upload a valid PDF file.');
-          } else if (error.message.includes('File is too large')) {
-            throw new Error('The PDF file is too large. Please try a smaller file (max 100MB).');
-          } else if (error.message.includes('corrupted')) {
-            throw new Error('The PDF file appears to be corrupted. Please try a different file.');
-          } else if (error.message.includes('scanned')) {
-            throw new Error('This appears to be a scanned PDF. Text and image extraction may not be fully supported for scanned PDFs.');
-          }
-          throw error;
-        }
-
-        throw new Error('Failed to extract content from the PDF. Please try a different file.');
+        y -= lineHeight;
       }
     }
 
-
-    // --- Image Extraction Function ---
-    async function extractImagesFromPage(page: pdfjsLib.PDFPageProxy, pageNumber: number): Promise<ExtractedImage[]> {
-      const images: ExtractedImage[] = [];
-      const operatorList: pdfjsLib.OperatorList = await page.getOperatorList();
-
-      for (let i = 0; i < operatorList.fnArray.length; i++) {
-        const op = operatorList.fnArray[i];
-        if (op === pdfjsLib.OPS.paintImageXObject || op === pdfjsLib.OPS.paintXObject) {
-          const imageName = operatorList.argsArray[i][0];
-
-          // Type assertion to bypass TypeScript error (temporary)
-          const pageAny: any = page;
-
-          let img;
-
-          try {
-            //Try to get the image using getXObject
-            img = await pageAny.getXObject(imageName);
-          }
-          catch (error) {
-            //If getXObject fails, try to get the image from the page's objects directly
-            console.log("getXObject failed. Trying alternative method", error)
-            img = pageAny.objs.get(imageName);
-          }
-
-
-          if (img && img.data) {
-            const imageType = img.subtype === 'ImageB' ? 'image/bmp' : img.subtype === 'ImageC' ? 'image/jpeg' : 'image/png';
-            const base64Image = arrayBufferToBase64(img.data, imageType);
-            images.push({ page: pageNumber, dataUrl: base64Image });
-          }
-        }
-      }
-      return images;
-    }
-
-
-    // --- PDF Creation Function ---
-    export async function createPDFFromText(markdownText: string): Promise<Uint8Array> {
-      try {
-        const pdfDoc = await PDFDocument.create();
-        const timesRomanFont = await pdfDoc.embedFont(StandardFonts.TimesRoman);
-        const timesBoldFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
-
-        // Convert markdown to HTML
-        const htmlContent = await marked(markdownText);
-
-        // Basic HTML to text conversion (you might want to enhance this)
-        const plainText = htmlContent
-          .replace(/<h1.*?>(.*?)<\/h1>/g, '\n# $1\n')
-          .replace(/<h2.*?>(.*?)<\/h2>/g, '\n## $1\n')
-          .replace(/<h3.*?>(.*?)<\/h3>/g, '\n### $1\n')
-          .replace(/<p.*?>(.*?)<\/p>/g, '\n$1\n')
-          .replace(/<img.*?src="(.*?)".*?>/g, '\n[Image]\n') // Placeholder for images
-          .replace(/<.*?>/g, '')
-          .replace(/&nbsp;/g, ' ')
-          .replace(/</g, '<')
-          .replace(/>/g, '>')
-          .replace(/&amp;/g, '&')
-          .trim();
-
-
-        const lines = plainText.split('\n');
-        const fontSize = 12;
-        const margin = 50;
-        const lineHeight = fontSize * 1.5;
-
-        let currentPage = pdfDoc.addPage();
-        const { width, height } = currentPage.getSize();
-        let y = height - margin;
-
-        for (const line of lines) {
-          if (line.startsWith('#')) {
-            // Handle headers
-            const level = line.match(/^#+/)[0].length;
-            const text = line.replace(/^#+\s*/, '');
-            const headerSize = fontSize + (3 - level) * 4;
-
-            if (y - headerSize < margin) {
-              currentPage = pdfDoc.addPage();
-              y = height - margin;
-            }
-
-            currentPage.drawText(text, {
-              x: margin,
-              y,
-              size: headerSize,
-              font: timesBoldFont
-            });
-
-            y -= headerSize * 1.5;
-          } else if (line.trim()) {
-            // Handle regular text
-            if (y - lineHeight < margin) {
-              currentPage = pdfDoc.addPage();
-              y = height - margin;
-            }
-
-            currentPage.drawText(line.trim(), {
-              x: margin,
-              y,
-              size: fontSize,
-              font: timesRomanFont,
-              lineHeight,
-              maxWidth: width - 2 * margin
-            });
-
-            y -= lineHeight;
-          }
-        }
-
-        return pdfDoc.save();
-      } catch (error) {
-        console.error('Error creating PDF:', error);
-        throw new Error('Failed to generate the translated PDF. Please try again.');
-      }
-    }
+    return pdfDoc.save();
+  } catch (error) {
+    console.error('Error creating PDF:', error);
+    throw new Error('Failed to generate the translated PDF. Please try again.');
+  }
+}
