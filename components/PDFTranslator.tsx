@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import {
   Upload,
@@ -9,6 +9,12 @@ import {
   AlertCircle,
   Copy,
   CheckCircle2,
+  Edit,
+  Eye,
+  ChevronLeft,
+  ChevronRight,
+  Info,
+  FileText
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -20,7 +26,9 @@ import { extractTextFromPDF } from '@/lib/pdf';
 import { translateChunks } from '@/lib/gemini';
 import { createPDFFromMarkdown } from '@/lib/markdownToPdf';
 import { cn } from '@/lib/utils';
-import { PDFViewer } from '@/components/PDFViewer';
+import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const STEPS = [
   { id: 'upload', title: 'Subir PDF', description: 'Sube tu documento PDF científico' },
@@ -243,59 +251,115 @@ export default function PDFTranslator() {
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
+      // Mostrar notificación de éxito
+      const notification = document.createElement('div');
+      notification.className = 'fixed bottom-4 right-4 bg-green-600 text-white py-2 px-4 rounded-md shadow-lg animate-fade-in-out z-50';
+      notification.textContent = '¡Texto copiado al portapapeles!';
+      document.body.appendChild(notification);
+      setTimeout(() => {
+        document.body.removeChild(notification);
+      }, 2000);
     } catch (err) {
       console.error('Error al copiar al portapapeles:', err);
+      setError('No se pudo copiar al portapapeles. Intente manualmente.');
     }
   };
 
-  const generatePdfPreview = async () => {
-    try {
-      setIsGeneratingPdfPreview(true);
-      setError('');
+  // Detectar si es dispositivo móvil
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Renderizar indicador de pasos responsivo
+  const renderStepIndicator = () => (
+    <div className="w-full mb-6">
+      {/* Versión para pantallas medianas y grandes */}
+      <div className="hidden md:flex justify-between mb-2">
+        {STEPS.map((step, index) => (
+          <div 
+            key={step.id} 
+            className={cn(
+              "flex flex-col items-center text-center flex-1 relative",
+              index <= currentStep ? "text-primary" : "text-muted-foreground"
+            )}
+          >
+            {/* Línea conectora */}
+            {index > 0 && (
+              <div className={cn(
+                "absolute left-0 right-0 top-5 h-0.5 -translate-y-1/2 -z-10",
+                index <= currentStep ? "bg-primary" : "bg-border"
+              )}></div>
+            )}
+            
+            <div className={cn(
+              "w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all mb-2 bg-background",
+              {
+                'border-primary bg-primary text-primary-foreground': stepStatus[step.id] === 'complete',
+                'border-primary text-primary': currentStep === index && stepStatus[step.id] !== 'complete',
+                'border-muted-foreground/30': currentStep < index,
+                'animate-pulse': stepStatus[step.id] === 'processing'
+              }
+            )}>
+              {stepStatus[step.id] === 'complete' ? (
+                <CheckCircle2 className="h-5 w-5" />
+              ) : stepStatus[step.id] === 'error' ? (
+                <AlertCircle className="h-5 w-5 text-destructive" />
+              ) : (
+                <span className="font-medium">{index + 1}</span>
+              )}
+            </div>
+            <p className="font-medium text-sm">{step.title}</p>
+            <p className="text-xs text-muted-foreground">{step.description}</p>
+          </div>
+        ))}
+      </div>
       
-      if (!translatedText || translatedText.trim().length === 0) {
-        throw new Error('No hay texto traducido para previsualizar');
-      }
-      
-      console.log("Generando vista previa del PDF...");
-      const pdfBytes = await createPDFFromMarkdown(translatedText)
-        .catch((err) => {
-          console.error("Error al crear vista previa:", err);
-          throw new Error(`Error en la vista previa: ${err.message}`);
-        });
-        
-      setPdfPreview(pdfBytes);
-      console.log("Vista previa generada correctamente");
-    } catch (err) {
-      console.error("Error completo al generar vista previa:", err);
-      setError(err instanceof Error 
-        ? `Error en la vista previa: ${err.message}` 
-        : 'Error al generar la vista previa');
-    } finally {
-      setIsGeneratingPdfPreview(false);
-    }
-  };
+      {/* Versión móvil simplificada */}
+      <div className="md:hidden mb-4">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-sm font-medium">
+            Paso {currentStep + 1} de {STEPS.length}
+          </span>
+          <Badge variant="outline" className="text-xs">
+            {STEPS[currentStep].title}
+          </Badge>
+        </div>
+        <Progress 
+          value={((currentStep) / (STEPS.length - 1)) * 100} 
+          className="h-2" 
+        />
+      </div>
+    </div>
+  );
 
   const renderStepContent = () => {
     switch (currentStep) {
       case 0: // Upload
         return (
-          <Card className="p-6">
+          <Card className="p-4 md:p-6 transition-all">
             {!file ? (
               <div
                 {...getRootProps()}
-                className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-all
+                className={`border-2 border-dashed rounded-lg p-6 md:p-12 text-center cursor-pointer transition-all
                   ${isDragActive ? 'border-primary bg-primary/5 scale-[0.99]' : 'border-muted-foreground/25 hover:border-primary/50'}`}
               >
                 <input {...getInputProps()} />
-                <Upload className="mx-auto h-16 w-16 text-muted-foreground mb-6" />
-                <h3 className="text-2xl font-semibold mb-3">
+                <Upload className="mx-auto h-12 w-12 md:h-16 md:w-16 text-muted-foreground mb-4 md:mb-6" />
+                <h3 className="text-xl md:text-2xl font-semibold mb-2 md:mb-3">
                   {isDragActive ? 'Suelte el PDF aquí' : 'Arrastre y suelte un archivo PDF aquí'}
                 </h3>
-                <p className="text-muted-foreground text-lg">
+                <p className="text-base md:text-lg text-muted-foreground">
                   o haga clic para seleccionar un archivo
                 </p>
-                <p className="text-sm text-muted-foreground mt-4">
+                <p className="text-xs md:text-sm text-muted-foreground mt-4">
                   Tamaño máximo: 100MB
                 </p>
               </div>
@@ -303,66 +367,91 @@ export default function PDFTranslator() {
               <>
                 {isExtracting ? (
                   <div className="space-y-4 p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                        <span className="text-lg">Extrayendo texto del PDF...</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 md:gap-4">
+                        <div className="bg-primary/10 p-2 rounded-full">
+                          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                        </div>
+                        <span className="text-base md:text-lg font-medium">Extrayendo texto...</span>
                       </div>
-                      <span className="text-sm text-muted-foreground">
-                        {totalPages > 0 ? `Página ${currentPage} de ${totalPages}` : 'Analizando documento...'}
-                      </span>
+                      <Badge variant="outline" className="animate-pulse">
+                        {totalPages > 0 ? `Página ${currentPage} de ${totalPages}` : 'Analizando...'}
+                      </Badge>
                     </div>
                     <Progress value={extractionProgress} className="h-2" />
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>0%</span>
-                      <span>{extractionProgress}%</span>
-                      <span>100%</span>
+                      <span>Iniciando</span>
+                      <span>{Math.round(extractionProgress)}%</span>
+                      <span>Completando</span>
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="text-xl font-semibold">{file.name}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {(file.size / 1024 / 1024).toFixed(2)} MB • {numPages} páginas
-                        </p>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div className="bg-blue-50 p-2 rounded-md">
+                          <FileText className="h-6 w-6 text-blue-600" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-medium text-gray-900 line-clamp-1">{file.name}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {(file.size / 1024 / 1024).toFixed(2)} MB • {numPages} páginas
+                          </p>
+                        </div>
                       </div>
-                      <Button variant="outline" size="sm" onClick={() => setFile(null)}>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => setFile(null)}
+                        className="w-full sm:w-auto"
+                      >
                         Cambiar archivo
                       </Button>
                     </div>
-                    <div className="bg-green-50 border border-green-200 rounded-md p-4 flex items-center gap-3">
-                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                    
+                    <div className="bg-green-50 border border-green-200 rounded-md p-3 md:p-4 flex items-center gap-3">
+                      <div className="bg-green-100 p-1.5 rounded-full">
+                        <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      </div>
                       <div>
                         <h4 className="text-sm font-medium text-green-800">
                           Extracción completa
                         </h4>
                         <p className="text-xs text-green-700">
-                          Se han extraído {numPages} páginas y {extractedText.length} caracteres.
+                          Se han extraído {numPages} páginas y {extractedText.length.toLocaleString()} caracteres.
                         </p>
                       </div>
                     </div>
                     
                     {extractedText && (
                       <div className="mt-4">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-lg font-medium">
-                            Vista previa del texto extraído:
-                          </h4>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-1.5">
+                            <h4 className="text-sm font-medium">Vista previa del texto extraído</h4>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Info className="h-4 w-4 text-muted-foreground" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  Este es el texto que será traducido
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </div>
                           <Button 
                             variant="ghost" 
                             size="sm" 
                             onClick={() => setShowFullPreview(!showFullPreview)}
-                            className="text-xs"
+                            className="text-xs h-8"
                           >
-                            {showFullPreview ? 'Mostrar menos' : 'Ver texto completo'}
+                            {showFullPreview ? 'Mostrar menos' : 'Ver completo'}
                           </Button>
                         </div>
                         <div
                           className={cn(
-                            "border rounded-lg p-4 overflow-auto text-sm mt-2 bg-gray-50 transition-all",
-                            showFullPreview ? "max-h-[500px]" : "max-h-60"
+                            "border rounded-md p-3 overflow-auto text-sm mt-1 bg-muted/40 font-mono transition-all",
+                            showFullPreview ? "max-h-[500px]" : "max-h-40"
                           )}
                         >
                           {showFullPreview 
@@ -376,8 +465,10 @@ export default function PDFTranslator() {
                       <Button
                         className="w-full mt-4"
                         onClick={handleNextStep}
+                        size={isMobile ? "default" : "lg"}
                       >
-                        Comenzar Traducción
+                        Continuar a Traducción
+                        <ChevronRight className="ml-1.5 h-4 w-4" />
                       </Button>
                     )}
                   </div>
@@ -389,116 +480,217 @@ export default function PDFTranslator() {
 
       case 1: // Translate
         return (
-          <Card className="p-6">
+          <Card className="p-4 md:p-6 transition-all">
             <div className="space-y-6">
               {isProcessing ? (
                 <div className="space-y-6">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <h3 className="text-xl font-semibold">Traduciendo documento</h3>
-                    <span className="text-sm text-muted-foreground animate-pulse">
-                      Esto puede tardar varios minutos...
-                    </span>
+                    <Badge variant="outline" className="text-sm animate-pulse sm:self-start">
+                      En progreso...
+                    </Badge>
                   </div>
                   
-                  <div className="space-y-4 bg-blue-50 p-6 rounded-lg border border-blue-100">
-                    <div className="flex items-center gap-4">
-                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  <div className="bg-blue-50/60 p-5 rounded-lg border border-blue-100 shadow-sm">
+                    <div className="flex items-start gap-4 mb-4">
+                      <div className="bg-white p-2 rounded-full shadow-sm">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                      </div>
                       <div>
-                        <span className="text-lg font-medium">Procesando con Google Gemini AI</span>
-                        <p className="text-sm text-muted-foreground">
-                          {progress < 10 ? 'Inicializando...' : 
-                           progress === 100 ? 'Finalizado!' : 
-                           `Traduciendo fragmento ${Math.ceil((progress - 10) / 80 * 100)}% completado`}
+                        <span className="text-lg font-medium text-blue-900">Procesando con Google Gemini AI</span>
+                        <p className="text-sm text-blue-700 mt-0.5">
+                          {progress < 10 ? 'Inicializando traducción...' : 
+                           progress === 100 ? '¡Traducción completada!' : 
+                           `Traduciendo (${Math.round(progress)}% completado)`}
                         </p>
                       </div>
                     </div>
-                    <Progress value={progress} className="h-2" />
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Iniciando</span>
-                      <span>{progress}%</span>
-                      <span>Finalizando</span>
+                    
+                    <div className="relative">
+                      <Progress value={progress} className="h-2.5 rounded-full" />
+                      <div className="flex justify-between text-xs text-blue-600 mt-2 font-medium">
+                        <span>Iniciando</span>
+                        <span>{Math.round(progress)}%</span>
+                        <span>Finalizando</span>
+                      </div>
                     </div>
                   </div>
                   
-                  <div className="border rounded-lg p-4 bg-gray-50">
-                    <h4 className="text-sm font-medium mb-2">Información del documento</h4>
-                    <ul className="text-xs text-muted-foreground space-y-1">
-                      <li>• Nombre: {file?.name}</li>
-                      <li>• Páginas: {numPages}</li>
-                      <li>• Caracteres: {extractedText.length}</li>
-                    </ul>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="bg-muted/20 rounded-lg p-3 border">
+                      <div className="text-xs uppercase text-muted-foreground font-medium mb-1">Documento</div>
+                      <div className="text-sm font-medium line-clamp-1">{file?.name || "Documento"}</div>
+                    </div>
+                    <div className="bg-muted/20 rounded-lg p-3 border">
+                      <div className="text-xs uppercase text-muted-foreground font-medium mb-1">Páginas</div>
+                      <div className="text-sm font-medium">{numPages}</div>
+                    </div>
+                    <div className="bg-muted/20 rounded-lg p-3 border">
+                      <div className="text-xs uppercase text-muted-foreground font-medium mb-1">Caracteres</div>
+                      <div className="text-sm font-medium">{extractedText.length.toLocaleString()}</div>
+                    </div>
                   </div>
+                  
+                  <Alert className="bg-yellow-50 border-yellow-200 text-yellow-800">
+                    <Info className="h-4 w-4 text-yellow-600" />
+                    <AlertDescription className="text-yellow-800">
+                      Por favor, no cierre ni recargue esta página durante el proceso de traducción.
+                    </AlertDescription>
+                  </Alert>
                 </div>
               ) : (
                 <>
                   <div>
-                    <h3 className="text-xl font-semibold mb-2">Configuración de Traducción</h3>
+                    <h3 className="text-xl font-semibold mb-3">Configuración de traducción</h3>
                     <p className="text-sm text-muted-foreground">
-                      Para traducir este documento, necesita proporcionar su API Key de Google Gemini.
-                      Puede obtener una clave en: <a href="https://ai.google.dev/" target="_blank" rel="noopener noreferrer" className="text-primary underline">Google AI Studio</a>
+                      Para traducir este documento, proporcione su API Key de Google Gemini.{' '}
+                      <a 
+                        href="https://ai.google.dev/" 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-primary underline hover:text-primary/80 transition-colors inline-flex items-center gap-1"
+                      >
+                        Obtener una clave gratuita
+                        <svg width="12" height="12" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 transition-transform group-hover:translate-x-[1px] group-hover:translate-y-[-1px]">
+                          <path d="M3.64645 11.3536C3.45118 11.1583 3.45118 10.8417 3.64645 10.6465L10.2929 4L6 4C5.72386 4 5.5 3.77614 5.5 3.5C5.5 3.22386 5.72386 3 6 3L11.5 3C11.6326 3 11.7598 3.05268 11.8536 3.14645C11.9473 3.24022 12 3.36739 12 3.5L12 9.00001C12 9.27615 11.7761 9.50001 11.5 9.50001C11.2239 9.50001 11 9.27615 11 9.00001V4.70711L4.35355 11.3536C4.15829 11.5488 3.84171 11.5488 3.64645 11.3536Z" fill="currentColor"></path>
+                        </svg>
+                      </a>
                     </p>
                   </div>
                   
                   <div className="space-y-4">
-                    <div className="space-y-2">
-                      <label htmlFor="api-key" className="text-sm font-medium">
+                    <div className="space-y-3">
+                      <label htmlFor="api-key" className="text-sm font-medium flex items-center gap-2">
                         API Key de Google Gemini
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-[220px] text-xs">
+                              La clave API nunca se almacena en nuestros servidores y solo se usa para esta traducción
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </label>
-                      <div className="flex gap-2">
-                        <input
-                          id="api-key"
-                          type="password"
-                          value={apiKey}
-                          onChange={(e) => {
-                            setApiKey(e.target.value);
-                            setIsApiKeyValid(false);
-                          }}
-                          placeholder="Ingrese su API Key aquí"
-                          className="flex-1 px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                        />
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="relative flex-1 group">
+                          <div className={cn(
+                            "absolute inset-0 rounded-md -z-10 transition-all",
+                            isApiKeyValid ? "bg-green-100/10" : "bg-transparent"
+                          )}></div>
+                          <input
+                            id="api-key"
+                            type="password"
+                            value={apiKey}
+                            onChange={(e) => {
+                              setApiKey(e.target.value);
+                              setIsApiKeyValid(false);
+                            }}
+                            placeholder="Pegue su clave API aquí"
+                            className={cn(
+                              "w-full px-3 py-2 border rounded-md text-sm transition-all duration-200",
+                              "focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary",
+                              "placeholder:text-muted-foreground/70",
+                              isApiKeyValid ? "border-green-500/40 shadow-sm shadow-green-500/10" : "border-input"
+                            )}
+                            aria-invalid={isApiKeyValid === false && apiKey.length > 0}
+                          />
+                          {isApiKeyValid && (
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-600 pointer-events-none">
+                              <CheckCircle2 className="h-4 w-4" />
+                            </div>
+                          )}
+                        </div>
                         <Button 
-                          variant="outline" 
-                          size="sm"
                           onClick={() => verifyApiKey(apiKey)}
                           disabled={isCheckingApiKey || !apiKey.trim()}
+                          className={cn(
+                            "whitespace-nowrap min-w-[140px] transition-all duration-200",
+                            isCheckingApiKey ? "bg-primary/80" : ""
+                          )}
                         >
                           {isCheckingApiKey ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : "Verificar"}
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Verificando...
+                            </>
+                          ) : "Verificar API Key"}
                         </Button>
                       </div>
                       {isApiKeyValid && (
-                        <p className="text-xs text-green-600 flex items-center gap-1">
-                          <CheckCircle2 className="h-3 w-3" />
+                        <p className="text-xs text-green-600 flex items-center gap-1.5 animate-fadeIn">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
                           API Key verificada correctamente
+                        </p>
+                      )}
+                      {!isApiKeyValid && apiKey.length > 0 && (
+                        <p className="text-xs text-amber-600 flex items-center gap-1.5">
+                          <Info className="h-3.5 w-3.5" />
+                          La API Key debe ser verificada antes de continuar
                         </p>
                       )}
                     </div>
                     
-                    <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-                      <h4 className="text-sm font-medium text-blue-800 mb-1">Información del documento</h4>
-                      <ul className="text-xs text-blue-700 space-y-1">
-                        <li>• Nombre: {file?.name}</li>
-                        <li>• Tamaño: {file ? (file.size / 1024 / 1024).toFixed(2) + " MB" : "N/A"}</li>
-                        <li>• Páginas extraídas: {numPages}</li>
-                        <li>• Caracteres a traducir: {extractedText.length}</li>
-                      </ul>
+                    <div className="bg-gradient-to-br from-blue-50/80 to-blue-50/40 border border-blue-200 rounded-lg p-4 shadow-sm transition-all hover:shadow-md duration-300">
+                      <h4 className="text-sm font-medium text-blue-800 mb-3 flex items-center gap-2">
+                        <div className="bg-blue-100 p-1 rounded">
+                          <Info className="h-4 w-4 text-blue-600" />
+                        </div>
+                        Información del documento
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="bg-white/60 rounded-md p-2.5 border border-blue-100/80 transition-colors hover:bg-white/80 duration-200">
+                          <div className="text-xs text-blue-500 mb-1">Nombre del archivo</div>
+                          <div className="font-medium text-sm text-blue-900 truncate" title={file?.name || "N/A"}>
+                            {file?.name || "N/A"}
+                          </div>
+                        </div>
+                        <div className="bg-white/60 rounded-md p-2.5 border border-blue-100/80 transition-colors hover:bg-white/80 duration-200">
+                          <div className="text-xs text-blue-500 mb-1">Tamaño del archivo</div>
+                          <div className="font-medium text-sm text-blue-900">
+                            {file ? (file.size / 1024 / 1024).toFixed(2) + " MB" : "N/A"}
+                          </div>
+                        </div>
+                        <div className="bg-white/60 rounded-md p-2.5 border border-blue-100/80 transition-colors hover:bg-white/80 duration-200">
+                          <div className="text-xs text-blue-500 mb-1">Páginas</div>
+                          <div className="font-medium text-sm text-blue-900">
+                            {numPages} {numPages === 1 ? "página" : "páginas"}
+                          </div>
+                        </div>
+                        <div className="bg-white/60 rounded-md p-2.5 border border-blue-100/80 transition-colors hover:bg-white/80 duration-200">
+                          <div className="text-xs text-blue-500 mb-1">Caracteres</div>
+                          <div className="font-medium text-sm text-blue-900">
+                            {extractedText.length.toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   
-                  <div className="flex justify-between">
+                  <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-between pt-2">
                     <Button 
                       variant="outline" 
                       onClick={() => setCurrentStep(0)}
+                      className="flex items-center transition-transform hover:-translate-x-0.5 duration-200"
                     >
+                      <ChevronLeft className="mr-1 h-4 w-4" />
                       Volver
                     </Button>
                     <Button 
                       onClick={handleNextStep}
                       disabled={!isApiKeyValid}
-                      className={!isApiKeyValid ? "opacity-50" : ""}
+                      className={cn(
+                        "transition-all duration-200",
+                        !isApiKeyValid ? "opacity-50 cursor-not-allowed" : "hover:translate-x-0.5"
+                      )}
                     >
-                      {isApiKeyValid ? "Iniciar Traducción" : "Verifique la API Key primero"}
+                      {isApiKeyValid ? (
+                        <>
+                          Iniciar traducción
+                          <ChevronRight className="ml-1 h-4 w-4" />
+                        </>
+                      ) : "Verifique la API Key primero"}
                     </Button>
                   </div>
                 </>
@@ -509,63 +701,97 @@ export default function PDFTranslator() {
 
       case 2: // Edit
         return (
-          <Card className="p-6">
+          <Card className="p-4 md:p-6 transition-all">
             <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h3 className="text-xl font-semibold">Editar Traducción</h3>
-                <div className="space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsEditing(!isEditing)}
-                  >
-                    {isEditing ? 'Ver Resultado' : 'Editar Markdown'}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => copyToClipboard(translatedText)}
-                  >
-                    <Copy className="h-4 w-4 mr-2" />
-                    Copiar
-                  </Button>
-                  <Button
-                    onClick={handleDownload}
-                    disabled={isGeneratingPdfPreview}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Descargar PDF
-                  </Button>
+              <Tabs defaultValue="editor" className="w-full">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                  <div>
+                    <h3 className="text-xl font-semibold">Documento traducido</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Revise y realice ajustes al texto traducido
+                    </p>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2">
+                    <TabsList className="grid grid-cols-2 h-8">
+                      <TabsTrigger value="editor" className="text-xs">Editor</TabsTrigger>
+                      <TabsTrigger value="preview" className="text-xs">Vista previa</TabsTrigger>
+                    </TabsList>
+                    
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => copyToClipboard(translatedText)}
+                          >
+                            <Copy className="h-3.5 w-3.5 mr-1" />
+                            <span className="hidden sm:inline">Copiar</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Copiar texto traducido
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="default"
+                            size="sm" 
+                            className="h-8"
+                            onClick={handleDownload}
+                            disabled={isGeneratingPdfPreview}
+                          >
+                            <Download className="h-3.5 w-3.5 mr-1" />
+                            <span className="hidden sm:inline">Descargar</span> PDF
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Descargar documento PDF traducido
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                 </div>
-              </div>
-
-              <div className="border rounded-lg p-6 min-h-[600px] bg-white">
-                {isEditing ? (
-                  <textarea
-                    value={translatedText}
-                    onChange={(e) => {
-                      setTranslatedText(e.target.value);
-                      // Limpiar la vista previa si se edita el texto
-                      if (pdfPreview) setPdfPreview(null);
-                    }}
-                    className="w-full h-full min-h-[600px] font-mono text-sm p-4 focus:outline-none"
-                    spellCheck={false}
-                  />
-                ) : (
-                  <div className="react-markdown">
+                
+                <TabsContent value="editor" className="mt-0 border-0 p-0">
+                  <div className="border rounded-lg focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+                    <textarea
+                      value={translatedText}
+                      onChange={(e) => {
+                        setTranslatedText(e.target.value);
+                      }}
+                      className="w-full h-[400px] md:h-[500px] font-mono text-sm p-4 focus:outline-none resize-none rounded-lg"
+                      spellCheck={false}
+                      placeholder="El texto traducido aparecerá aquí..."
+                    />
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="preview" className="mt-0 border-0 p-0">
+                  <div className="border rounded-lg p-5 min-h-[400px] md:min-h-[500px] bg-white overflow-auto prose max-w-none">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {translatedText}
+                      {translatedText || "*No hay contenido para mostrar. El texto traducido aparecerá aquí.*"}
                     </ReactMarkdown>
                   </div>
-                )}
-              </div>
+                </TabsContent>
+              </Tabs>
               
-              {/* Añadir el componente de visualización de PDF */}
-              <PDFViewer 
-                pdfData={pdfPreview}
-                isGenerating={isGeneratingPdfPreview}
-                onGenerate={generatePdfPreview}
-              />
+              <div className="flex justify-start pt-2">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setCurrentStep(1)}
+                  size="sm"
+                >
+                  <ChevronLeft className="mr-1.5 h-4 w-4" />
+                  Volver a configuración
+                </Button>
+              </div>
             </div>
           </Card>
         );
@@ -573,51 +799,21 @@ export default function PDFTranslator() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8">
-      {/* Progress Steps */}
-      <div className="flex justify-between items-center">
-        {STEPS.map((step, index) => (
-          <div key={step.id} className="flex items-center">
-            <div className="flex flex-col items-center">
-              <div
-                className={cn(
-                  "w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors",
-                  {
-                    'border-primary bg-primary text-primary-foreground': stepStatus[step.id] === 'complete',
-                    'border-primary bg-primary/20': currentStep === index,
-                    'border-muted-foreground/30': currentStep < index,
-                    'animate-pulse': stepStatus[step.id] === 'processing'
-                  }
-                )}
-              >
-                {stepStatus[step.id] === 'complete' ? (
-                  <CheckCircle2 className="h-5 w-5" />
-                ) : (
-                  <span className="font-medium">{index + 1}</span>
-                )}
-              </div>
-              <div className="text-center mt-2">
-                <p className="font-medium">{step.title}</p>
-                <p className="text-sm text-muted-foreground">{step.description}</p>
-              </div>
-            </div>
-            {index < STEPS.length - 1 && (
-              <div className="flex-1 h-[2px] bg-muted-foreground/30 mx-4" />
-            )}
-          </div>
-        ))}
-      </div>
-
+    <div className="container mx-auto px-4 py-6 max-w-4xl">
+      {renderStepIndicator()}
+      
       {/* Error Display */}
       {error && (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="mb-4 animate-fadeIn">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
       {/* Step Content */}
-      {renderStepContent()}
+      <div className="transition-all duration-300">
+        {renderStepContent()}
+      </div>
     </div>
   );
 }
