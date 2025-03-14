@@ -12,34 +12,40 @@ const nextConfig = {
         tls: false,
       };
       
-      // Handle problematic files with different configuration
-      if (config.optimization && config.optimization.minimizer) {
-        config.optimization.minimizer.forEach(minimizer => {
-          if (minimizer.constructor.name === 'TerserPlugin') {
-            minimizer.options.terserOptions = {
-              ...minimizer.options.terserOptions,
-              keep_classnames: true,
-              keep_fnames: true,
-              safari10: true,
-              ecma: 5
-            };
+      // COMPLETELY disable minimization - this is the key fix
+      if (config.optimization) {
+        config.optimization.minimize = false;
+        
+        // If still using Terser, configure it to do almost nothing
+        if (config.optimization.minimizer) {
+          for (const minimizer of config.optimization.minimizer) {
+            if (minimizer.constructor.name === 'TerserPlugin') {
+              minimizer.options.terserOptions = {
+                ...minimizer.options.terserOptions,
+                compress: false,
+                mangle: false,
+                keep_classnames: true,
+                keep_fnames: true,
+                safari10: true,
+                ecma: 5
+              };
+            }
           }
-        });
+        }
       }
     }
     
     return config;
   },
-  // Completely disable minification
   swcMinify: false,
   eslint: {
     ignoreDuringBuilds: true,
   },
   images: { unoptimized: true },
   experimental: {
-    // Additional experimental settings that might help
     forceSwcTransforms: true,
-    esmExternals: 'loose'
+    esmExternals: false, // Changed from 'loose' to false
+    legacyBrowsers: true
   }
 };
 

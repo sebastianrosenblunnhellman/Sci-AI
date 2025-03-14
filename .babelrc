@@ -2,10 +2,16 @@
   "presets": [
     ["@babel/preset-env", {
       "targets": {
-        "browsers": [">0.3%", "not dead", "not op_mini all"]
-      }
+        "browsers": [">0.3%", "not dead", "not op_mini all"],
+        "node": "current"
+      },
+      "modules": "commonjs",
+      "loose": true
     }],
     "@babel/preset-react"
   ],
-  "plugins": []
+  "plugins": [],
+  "assumptions": {
+    "setPublicClassFields": false
+  }
 }
