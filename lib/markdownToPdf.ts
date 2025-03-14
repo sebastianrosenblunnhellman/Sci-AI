@@ -505,7 +505,7 @@ export async function createPDFFromMarkdown(markdownText: string): Promise<Uint8
           default: {
             // Otros elementos no procesados específicamente,
             // intentamos extraer texto si está disponible
-            if (token.text) {
+            if ('text' in token && token.text) {
               writeTextWithWrapping(token.text);
             }
           }
