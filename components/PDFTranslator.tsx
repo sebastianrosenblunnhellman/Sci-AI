@@ -539,7 +539,7 @@ export default function PDFTranslator() {
                     <p className="text-sm text-muted-foreground">
                       Para traducir este documento, proporcione su API Key de Google Gemini.{' '}
                       <a 
-                        href="https://ai.google.dev/" 
+                        href="https://aistudio.google.com/" 
                         target="_blank" 
                         rel="noopener noreferrer" 
                         className="text-primary underline hover:text-primary/80 transition-colors inline-flex items-center gap-1"
