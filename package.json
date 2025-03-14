@@ -75,6 +75,8 @@
     "tailwindcss-animate": "^1.0.7",
     "typescript": "5.2.2",
     "vaul": "^0.9.9",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "next-babel-loader": "^0.1.0",
+    "babel-loader": "^9.1.3"
   }
 }

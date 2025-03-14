@@ -11,13 +11,30 @@ const nextConfig = {
         net: false,
         tls: false,
       };
+      
+      // Disable terser for problematic files
+      config.optimization.minimizer = config.optimization.minimizer.map(minimizer => {
+        if (minimizer.constructor.name === 'TerserPlugin') {
+          return new minimizer.constructor({
+            ...minimizer.options,
+            terserOptions: {
+              ...minimizer.options.terserOptions,
+              keep_classnames: true,
+              keep_fnames: true,
+              safari10: true,
+            },
+          });
+        }
+        return minimizer;
+      });
     }
     
     return config;
   },
   // Prevent optimization issues
   swcMinify: false,
-  output: 'export',
+  // Remove static export for Vercel deployment
+  // output: 'export',  
   eslint: {
     ignoreDuringBuilds: true,
   },
