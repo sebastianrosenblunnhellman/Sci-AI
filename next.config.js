@@ -4,7 +4,7 @@ const nextConfig = {
   swcMinify: true,
   images: {
     domains: [], // Agrega aquí dominios para imágenes externas si los necesitas
-    unoptimized: process.env.NODE_ENV === 'development',
+    unoptimized: true, // Evita problemas con el sistema de imágenes de Next.js
     // Necesario para compatibilidad con Cloudflare Pages
     loader: 'default',
     remotePatterns: [],
@@ -46,7 +46,7 @@ const nextConfig = {
   },
   // Si se detecta Cloudflare Pages como entorno de ejecución
   // Esta configuración ayuda con el manejo de workers
-  output: process.env.CF_PAGES ? 'standalone' : undefined,
+  output: 'export',
 }
 
 module.exports = nextConfig
