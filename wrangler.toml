@@ -2,13 +2,16 @@ name = "sci-ai"
 compatibility_date = "2023-06-28"
 compatibility_flags = ["nodejs_compat"]
 
-[site]
-bucket = ".next"
+# Build output directory for Cloudflare Pages
+pages_build_output_dir = ".next"
 
 [build]
 command = "npm run build"
 watch_dir = "./app"
 node_version = "18"
+
+[site]
+bucket = ".next"
 
 [env.production]
 routes = [
