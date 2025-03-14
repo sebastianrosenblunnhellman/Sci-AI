@@ -18,7 +18,7 @@ const nextConfig = {
   experimental: {
     largePageDataBytes: 128 * 1000, // 128KB por defecto, aumentar si es necesario
     // Optimiza compatibilidad con Cloudflare
-    optimizeCss: true,
+    optimizeCss: false, // Turn this off to avoid critters issues
     scrollRestoration: true,
     forceSwcTransforms: true, // Force SWC transforms even with custom Babel config
   },
