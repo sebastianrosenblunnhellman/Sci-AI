@@ -1,31 +1,52 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ['@google/generative-ai', '@radix-ui'],
-  swcMinify: true, // Cambiar a true para usar SWC en lugar de Terser
-  webpack: (config, { isServer }) => {
-    // Fix syntax issues with certain packages
-    if (!isServer) {
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        tls: false,
-      };
-    }
-    return config;
+  swcMinify: true,
+  images: {
+    domains: [], // Agrega aquí dominios para imágenes externas si los necesitas
+    unoptimized: process.env.NODE_ENV === 'development',
+    // Necesario para compatibilidad con Cloudflare Pages
+    loader: 'default',
+    remotePatterns: [],
   },
-  eslint: {
-    ignoreDuringBuilds: true,
+  // Optimización para producción
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production' ? {
+      exclude: ['error', 'warn'],
+    } : false,
   },
-  images: { 
-    unoptimized: true 
-  },
+  // Aumenta el límite de tamaño de página para PDF grandes
   experimental: {
-    forceSwcTransforms: true,
-    esmExternals: 'loose',
-    scrollRestoration: true
-  }
-};
+    largePageDataBytes: 128 * 1000, // 128KB por defecto, aumentar si es necesario
+    // Optimiza compatibilidad con Cloudflare
+    optimizeCss: true,
+    scrollRestoration: true,
+  },
+  // Configuración de headers de seguridad
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            key: 'X-XSS-Protection',
+            value: '1; mode=block',
+          },
+        ],
+      },
+    ]
+  },
+  // Si se detecta Cloudflare Pages como entorno de ejecución
+  // Esta configuración ayuda con el manejo de workers
+  output: process.env.CF_PAGES ? 'standalone' : undefined,
+}
 
-module.exports = nextConfig;
+module.exports = nextConfig

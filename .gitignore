@@ -26,10 +26,20 @@ yarn-error.log*
 
 # local env files
 .env*.local
+.env
 
 # vercel
 .vercel
 
+# cloudflare
+.wrangler/
+.cloudflare/
+dist/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# IDE specific files
+.idea
+.vscode
