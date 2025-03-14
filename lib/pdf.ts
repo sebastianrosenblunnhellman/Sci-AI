@@ -368,8 +368,8 @@ export async function createPDFFromText(markdownText: string): Promise<Uint8Arra
         
         // Procesar texto en negrita e itálica
         let processedLine = line;
-        const boldMatches = [...line.matchAll(/\*\*(.*?)\*\*/g)];
-        const italicMatches = [...line.matchAll(/\*(.*?)\*/g)];
+        const boldMatches = Array.from(line.matchAll(/\*\*(.*?)\*\*/g));
+        const italicMatches = Array.from(line.matchAll(/\*(.*?)\*/g));
         
         // Si hay formato especial, lo procesamos por partes
         if (boldMatches.length > 0 || italicMatches.length > 0) {
