@@ -12,33 +12,35 @@ const nextConfig = {
         tls: false,
       };
       
-      // Disable terser for problematic files
-      config.optimization.minimizer = config.optimization.minimizer.map(minimizer => {
-        if (minimizer.constructor.name === 'TerserPlugin') {
-          return new minimizer.constructor({
-            ...minimizer.options,
-            terserOptions: {
+      // Handle problematic files with different configuration
+      if (config.optimization && config.optimization.minimizer) {
+        config.optimization.minimizer.forEach(minimizer => {
+          if (minimizer.constructor.name === 'TerserPlugin') {
+            minimizer.options.terserOptions = {
               ...minimizer.options.terserOptions,
               keep_classnames: true,
               keep_fnames: true,
               safari10: true,
-            },
-          });
-        }
-        return minimizer;
-      });
+              ecma: 5
+            };
+          }
+        });
+      }
     }
     
     return config;
   },
-  // Prevent optimization issues
+  // Completely disable minification
   swcMinify: false,
-  // Remove static export for Vercel deployment
-  // output: 'export',  
   eslint: {
     ignoreDuringBuilds: true,
   },
   images: { unoptimized: true },
+  experimental: {
+    // Additional experimental settings that might help
+    forceSwcTransforms: true,
+    esmExternals: 'loose'
+  }
 };
 
 module.exports = nextConfig;
