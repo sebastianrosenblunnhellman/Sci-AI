@@ -150,11 +150,14 @@ export async function extractTextFromPDF(
 // --- Image Extraction Function ---
 async function extractImagesFromPage(page: pdfjsLib.PDFPageProxy, pageNumber: number): Promise<ExtractedImage[]> {
   const images: ExtractedImage[] = [];
-  const operatorList: pdfjsLib.OperatorList = await page.getOperatorList();
+  // Use any type instead of pdfjsLib.OperatorList which doesn't exist in the type definitions
+  const operatorList: any = await page.getOperatorList();
 
   for (let i = 0; i < operatorList.fnArray.length; i++) {
     const op = operatorList.fnArray[i];
-    if (op === pdfjsLib.OPS.paintImageXObject || op === pdfjsLib.OPS.paintXObject) {
+    // Use numeric constants instead of pdfjsLib.OPS which might not be exported correctly
+    // 92 is paintImageXObject, 91 is paintXObject (based on common pdf.js values)
+    if (op === 92 || op === 91) {
       const imageName = operatorList.argsArray[i][0];
 
       // Type assertion to bypass TypeScript error (temporary)
