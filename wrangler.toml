@@ -8,6 +8,7 @@ bucket = ".next"
 [build]
 command = "npm run build"
 watch_dir = "./app"
+node_version = "18"
 
 [env.production]
 routes = [
