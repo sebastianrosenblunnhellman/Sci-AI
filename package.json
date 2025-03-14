@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "vercel-build": "npm run clean && next build",
+    "clean": "rm -rf .next"
   },
   "dependencies": {
     "@google/generative-ai": "^0.2.1",
