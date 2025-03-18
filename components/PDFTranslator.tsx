@@ -728,28 +728,23 @@ export default function PDFTranslator() {
                       <TabsTrigger value="preview" className="text-xs">Vista previa</TabsTrigger>
                       <TabsTrigger value="images" className="text-xs">
                         Imágenes
-                        {extractedImages.length > 0 && (
-                          <Badge variant="secondary" className="ml-1 h-4 min-w-4 text-[10px]">
-                            {extractedImages.length}
-                          </Badge>
-                        )}
                       </TabsTrigger>
                     </TabsList>
                     
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
+                    <TooltipProvider>er>
+                      <Tooltip>ltip>
+                        <TooltipTrigger asChild>ger asChild>
+                          <Buttonon
+                            variant="outline"        variant="outline"
                             size="sm"
-                            className="h-8"
-                            onClick={() => copyToClipboard(translatedText)}
+                            className="h-8"ssName="h-8"
+                            onClick={() => copyToClipboard(translatedText)}oClipboard(translatedText)}
                           >
-                            <Copy className="h-3.5 w-3.5 mr-1" />
-                            <span className="hidden sm:inline">Copiar</span>
+                            <Copy className="h-3.5 w-3.5 mr-1" />h-3.5 w-3.5 mr-1" />
+                            <span className="hidden sm:inline">Copiar</span>ssName="hidden sm:inline">Copiar</span>
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>
+                        <TooltipContent>oltipContent>
                           Copiar texto traducido
                         </TooltipContent>
                       </Tooltip>
@@ -757,19 +752,19 @@ export default function PDFTranslator() {
                     
                     <TooltipProvider>
                       <Tooltip>
-                        <TooltipTrigger asChild>
+                        <TooltipTrigger asChild>Trigger asChild>
                           <Button
-                            variant="default"
-                            size="sm" 
-                            className="h-8"
-                            onClick={handleDownload}
-                            disabled={isGeneratingPdfPreview}
+                            variant="default"        variant="default"
+                            size="sm"  
+                            className="h-8"ssName="h-8"
+                            onClick={handleDownload}oad}
+                            disabled={isGeneratingPdfPreview}led={isGeneratingPdfPreview}
                           >
-                            <Download className="h-3.5 w-3.5 mr-1" />
-                            <span className="hidden sm:inline">Descargar</span> PDF
+                            <Download className="h-3.5 w-3.5 mr-1" />className="h-3.5 w-3.5 mr-1" />
+                            <span className="hidden sm:inline">Descargar</span> PDF="hidden sm:inline">Descargar</span> PDF
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>
+                        <TooltipContent>oltipContent>
                           Descargar documento PDF traducido
                         </TooltipContent>
                       </Tooltip>
@@ -777,128 +772,128 @@ export default function PDFTranslator() {
                   </div>
                 </div>
                 
-                <TabsContent value="editor" className="mt-0 border-0 p-0">
-                  <div className="border rounded-lg focus-within:ring-1 focus-within:ring-primary/20 transition-all">
-                    <textarea
-                      value={translatedText}
-                      onChange={(e) => {
+                <TabsContent value="editor" className="mt-0 border-0 p-0">ue="editor" className="mt-0 border-0 p-0">
+                  <div className="border rounded-lg focus-within:ring-1 focus-within:ring-primary/20 transition-all">er rounded-lg focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+                    <textareatarea
+                      value={translatedText}value={translatedText}
+                      onChange={(e) => {      onChange={(e) => {
                         setTranslatedText(e.target.value);
                       }}
-                      className="w-full h-[400px] md:h-[500px] font-mono text-sm p-4 focus:outline-none resize-none rounded-lg"
+                      className="w-full h-[400px] md:h-[500px] font-mono text-sm p-4 focus:outline-none resize-none rounded-lg"me="w-full h-[400px] md:h-[500px] font-mono text-sm p-4 focus:outline-none resize-none rounded-lg"
                       spellCheck={false}
-                      placeholder="El texto traducido aparecerá aquí..."
+                      placeholder="El texto traducido aparecerá aquí..."xto traducido aparecerá aquí..."
                     />
                   </div>
                   
-                  {extractedImages.length > 0 && (
+                  {extractedImages.length > 0 && (h > 0 && (
                     <div className="mt-4 flex justify-end">
-                      <Button
-                        onClick={addAllImagesToMarkdown}
-                        variant="outline"
+                      <Button<Button
+                        onClick={addAllImagesToMarkdown}onClick={addAllImagesToMarkdown}
+                        variant="outline"      variant="outline"
                         size="sm"
                         className="text-xs"
                       >
-                        <ImageIcon className="h-3.5 w-3.5 mr-1.5" />
-                        Añadir todas las imágenes al final
+                        <ImageIcon className="h-3.5 w-3.5 mr-1.5" />5 mr-1.5" />
+                        Añadir todas las imágenes al finalimágenes al final
                       </Button>
                     </div>
                   )}
                   
                   <div className="mt-4">
                     <PDFViewer 
-                      pdfData={pdfPreview} 
-                      isGenerating={isGeneratingPdfPreview} 
-                      onGenerate={() => {
-                        setIsGeneratingPdfPreview(true);
-                        createPDFFromMarkdown(translatedText)
-                          .then(pdfBytes => {
+                      pdfData={pdfPreview} ata={pdfPreview} 
+                      isGenerating={isGeneratingPdfPreview}   isGenerating={isGeneratingPdfPreview} 
+                      onGenerate={() => {    onGenerate={() => {
+                        setIsGeneratingPdfPreview(true);dfPreview(true);
+                        createPDFFromMarkdown(translatedText)DFFromMarkdown(translatedText)
+                          .then(pdfBytes => { {
                             setPdfPreview(pdfBytes);
                           })
                           .catch(err => {
-                            setError(`Error al generar vista previa del PDF: ${err.message}`);
+                            setError(`Error al generar vista previa del PDF: ${err.message}`);previa del PDF: ${err.message}`);
                           })
                           .finally(() => {
-                            setIsGeneratingPdfPreview(false);
+                            setIsGeneratingPdfPreview(false);setIsGeneratingPdfPreview(false);
                           });
                       }}
                     />
                   </div>
                 </TabsContent>
                 
-                <TabsContent value="preview" className="mt-0 border-0 p-0">
-                  <div className="border rounded-lg p-5 min-h-[400px] md:min-h-[500px] bg-white overflow-auto prose max-w-none">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {translatedText || "*No hay contenido para mostrar. El texto traducido aparecerá aquí.*"}
-                    </ReactMarkdown>
+                <TabsContent value="preview" className="mt-0 border-0 p-0">tent value="preview" className="mt-0 border-0 p-0">
+                  <div className="border rounded-lg p-5 min-h-[400px] md:min-h-[500px] bg-white overflow-auto prose max-w-none"> className="border rounded-lg p-5 min-h-[400px] md:min-h-[500px] bg-white overflow-auto prose max-w-none">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>ctMarkdown remarkPlugins={[remarkGfm]}>
+                      {translatedText || "*No hay contenido para mostrar. El texto traducido aparecerá aquí.*"}tedText || "*No hay contenido para mostrar. El texto traducido aparecerá aquí.*"}
+                    </ReactMarkdown>    </ReactMarkdown>
                   </div>
                 </TabsContent>
                 
                 <TabsContent value="images" className="mt-0 border-0 p-0">
-                  <div className="border rounded-lg p-4 min-h-[400px] md:min-h-[500px] bg-white overflow-auto">
-                    <PDFImageExtractor
-                      images={extractedImages}
-                      isExtracting={isExtractingImages}
+                  <div className="border rounded-lg p-4 min-h-[400px] md:min-h-[500px] bg-white overflow-auto">rder rounded-lg p-4 min-h-[400px] md:min-h-[500px] bg-white overflow-auto">
+                    <PDFImageExtractorImageExtractor
+                      images={extractedImages}extractedImages}
+                      isExtracting={isExtractingImages}      isExtracting={isExtractingImages}
                       onAddImageToMarkdown={addImageToMarkdown}
                     />
                   </div>
                 </TabsContent>
               </Tabs>
               
-              <div className="flex justify-start pt-2">
+              <div className="flex justify-start pt-2">ssName="flex justify-start pt-2">
                 <Button 
-                  variant="outline" 
-                  onClick={() => setCurrentStep(1)}
-                  size="sm"
+                  variant="outline" line" 
+                  onClick={() => setCurrentStep(1)}lick={() => setCurrentStep(1)}
+                  size="sm"    size="sm"
                 >
-                  <ChevronLeft className="mr-1.5 h-4 w-4" />
-                  Volver a configuración
+                  <ChevronLeft className="mr-1.5 h-4 w-4" />onLeft className="mr-1.5 h-4 w-4" />
+                  Volver a configuraciónción
                 </Button>
               </div>
-            </div>
+            </div>>
           </Card>
         );
     }
   };
 
-  // Function to add image to markdown
-  const addImageToMarkdown = (imageUrl: string, caption?: string) => {
-    const imageMarkdown = `\n\n![${caption || 'Imagen'}](${imageUrl})\n\n${caption ? `*${caption}*\n` : ''}`;
-    setTranslatedText(prev => prev + imageMarkdown);
-  };
+  // Function to add image to markdownadd image to markdown
+  const addImageToMarkdown = (imageUrl: string, caption?: string) => {dImageToMarkdown = (imageUrl: string, caption?: string) => {
+    const imageMarkdown = `\n\n![${caption || 'Imagen'}](${imageUrl})\n\n${caption ? `*${caption}*\n` : ''}`;onst imageMarkdown = `\n\n![${caption || 'Imagen'}](${imageUrl})\n\n${caption ? `*${caption}*\n` : ''}`;
+    setTranslatedText(prev => prev + imageMarkdown);setTranslatedText(prev => prev + imageMarkdown);
+  };  };
 
   // Function to add all images at the end of the markdown
   const addAllImagesToMarkdown = () => {
     if (extractedImages.length === 0) return;
     
-    let imagesSection = "\n\n## Imágenes Extraídas\n\n";
+    let imagesSection = "\n\n## Imágenes Extraídas\n\n";    let imagesSection = "\n\n## Imágenes Extraídas\n\n";
     extractedImages.forEach((img, index) => {
-      imagesSection += `\n\n![Figura ${index + 1}](${img.dataUrl})\n\n*Figura ${index + 1}: Imagen de la página ${img.page}*\n`;
+      imagesSection += `\n\n![Figura ${index + 1}](${img.dataUrl})\n\n*Figura ${index + 1}: Imagen de la página ${img.page}*\n`;ndex + 1}](${img.dataUrl})\n\n*Figura ${index + 1}: Imagen de la página ${img.page}*\n`;
     });
     
     setTranslatedText(prev => prev + imagesSection);
   };
 
-  return (
-    <div className="relative">
+  return (n (
+    <div className="relative"><div className="relative">
       {/* Contenido principal */}
-      <div className="transition-all duration-300">
-        {/* Contenido de la app */}
-        <div className="container mx-auto px-4 py-6 max-w-4xl">
-          {renderStepIndicator()}
+      <div className="transition-all duration-300">  <div className="transition-all duration-300">
+        {/* Contenido de la app */}        {/* Contenido de la app */}
+        <div className="container mx-auto px-4 py-6 max-w-4xl">iv className="container mx-auto px-4 py-6 max-w-4xl">
+          {renderStepIndicator()}()}
           
           {/* Error Display */}
           {error && (
-            <Alert variant="destructive" className="mb-4 animate-fadeIn">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
+            <Alert variant="destructive" className="mb-4 animate-fadeIn">e-fadeIn">
+              <AlertCircle className="h-4 w-4" />ame="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>    <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
 
           {/* Step Content */}
           <div className="transition-all duration-300">
-            {renderStepContent()}
-          </div>
-        </div>
+            {renderStepContent()}tepContent()}
+          </div>div>
+        </div>        </div>
       </div>
     </div>
   );
