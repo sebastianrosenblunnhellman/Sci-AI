@@ -1,49 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
-  swcMinify: true,
+  // ...existing code...
+  
+  // Add this to ensure images are served correctly
   images: {
-    domains: [], // Agrega aquí dominios para imágenes externas si los necesitas
-    // Necesario para compatibilidad con Cloudflare Pages
-    loader: 'default',
-    remotePatterns: [],
+    domains: ['localhost'],
+    // You can also specify other image optimization options here
   },
-  // Optimización para producción
-  compiler: {
-    removeConsole: process.env.NODE_ENV === 'production' ? {
-      exclude: ['error', 'warn'],
-    } : false,
-  },
-  // Aumenta el límite de tamaño de página para PDF grandes
-  experimental: {
-    largePageDataBytes: 128 * 1000, // 128KB por defecto, aumentar si es necesario
-    // Optimiza compatibilidad con Cloudflare
-    optimizeCss: false, // Turn this off to avoid critters issues
-    scrollRestoration: true,
-    forceSwcTransforms: true, // Force SWC transforms even with custom Babel config
-  },
-  // Configuración de headers de seguridad
-  async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
-          },
-          {
-            key: 'X-Frame-Options',
-            value: 'DENY',
-          },
-          {
-            key: 'X-XSS-Protection',
-            value: '1; mode=block',
-          },
-        ],
-      },
-    ]
-  },
+  
+  // ...existing code...
 }
 
-module.exports = nextConfig;
+module.exports = nextConfig

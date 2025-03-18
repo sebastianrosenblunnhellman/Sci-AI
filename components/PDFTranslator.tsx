@@ -12,7 +12,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Info,
-  FileText
+  FileText,
+  ImageIcon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -27,6 +28,8 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PDFImageExtractor, ExtractedImageProps } from '@/components/PDFImageExtractor';
+import { PDFViewer } from '@/components/PDFViewer';
 
 const STEPS = [
   { id: 'upload', title: 'Subir PDF', description: 'Sube tu documento PDF científico' },
@@ -62,7 +65,9 @@ export default function PDFTranslator() {
   const [pdfPreview, setPdfPreview] = useState<Uint8Array | null>(null);
   const [isGeneratingPdfPreview, setIsGeneratingPdfPreview] = useState(false);
 
-  // ... resto de tus funciones existentes
+  // Add state for extracted images
+  const [extractedImages, setExtractedImages] = useState<ExtractedImageProps[]>([]);
+  const [isExtractingImages, setIsExtractingImages] = useState(false);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
@@ -82,6 +87,8 @@ export default function PDFTranslator() {
         setCurrentPage(0);
         setTotalPages(0);
         setReadyForNextStep(false);
+        setExtractedImages([]);
+        setIsExtractingImages(true);
 
         try {
           const extractionResult = await extractTextFromPDF(
@@ -90,16 +97,25 @@ export default function PDFTranslator() {
               setExtractionProgress(progress);
               setCurrentPage(current);
               setTotalPages(total);
-            }
+            },
+            true // Enable image extraction
           );
           
           setExtractedText(extractionResult.text);
           setNumPages(extractionResult.numPages || totalPages);
+          
+          // Process extracted images
+          if (extractionResult.images && extractionResult.images.length > 0) {
+            setExtractedImages(extractionResult.images as ExtractedImageProps[]);
+          }
+          
           setIsExtracting(false);
+          setIsExtractingImages(false);
           setStepStatus({ ...stepStatus, upload: 'complete' });
           setReadyForNextStep(true);
         } catch (extractionError) {
           setIsExtracting(false);
+          setIsExtractingImages(false);
           console.error("Error during extraction:", extractionError);
           setError(extractionError instanceof Error ? extractionError.message : 'Error al extraer texto del PDF');
           setStepStatus(prev => ({ ...prev, upload: 'error' }));
@@ -707,9 +723,17 @@ export default function PDFTranslator() {
                   </div>
                   
                   <div className="flex flex-wrap gap-2">
-                    <TabsList className="grid grid-cols-2 h-8">
+                    <TabsList className="grid grid-cols-3 h-8">
                       <TabsTrigger value="editor" className="text-xs">Editor</TabsTrigger>
                       <TabsTrigger value="preview" className="text-xs">Vista previa</TabsTrigger>
+                      <TabsTrigger value="images" className="text-xs">
+                        Imágenes
+                        {extractedImages.length > 0 && (
+                          <Badge variant="secondary" className="ml-1 h-4 min-w-4 text-[10px]">
+                            {extractedImages.length}
+                          </Badge>
+                        )}
+                      </TabsTrigger>
                     </TabsList>
                     
                     <TooltipProvider>
@@ -765,6 +789,40 @@ export default function PDFTranslator() {
                       placeholder="El texto traducido aparecerá aquí..."
                     />
                   </div>
+                  
+                  {extractedImages.length > 0 && (
+                    <div className="mt-4 flex justify-end">
+                      <Button
+                        onClick={addAllImagesToMarkdown}
+                        variant="outline"
+                        size="sm"
+                        className="text-xs"
+                      >
+                        <ImageIcon className="h-3.5 w-3.5 mr-1.5" />
+                        Añadir todas las imágenes al final
+                      </Button>
+                    </div>
+                  )}
+                  
+                  <div className="mt-4">
+                    <PDFViewer 
+                      pdfData={pdfPreview} 
+                      isGenerating={isGeneratingPdfPreview} 
+                      onGenerate={() => {
+                        setIsGeneratingPdfPreview(true);
+                        createPDFFromMarkdown(translatedText)
+                          .then(pdfBytes => {
+                            setPdfPreview(pdfBytes);
+                          })
+                          .catch(err => {
+                            setError(`Error al generar vista previa del PDF: ${err.message}`);
+                          })
+                          .finally(() => {
+                            setIsGeneratingPdfPreview(false);
+                          });
+                      }}
+                    />
+                  </div>
                 </TabsContent>
                 
                 <TabsContent value="preview" className="mt-0 border-0 p-0">
@@ -772,6 +830,16 @@ export default function PDFTranslator() {
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {translatedText || "*No hay contenido para mostrar. El texto traducido aparecerá aquí.*"}
                     </ReactMarkdown>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="images" className="mt-0 border-0 p-0">
+                  <div className="border rounded-lg p-4 min-h-[400px] md:min-h-[500px] bg-white overflow-auto">
+                    <PDFImageExtractor
+                      images={extractedImages}
+                      isExtracting={isExtractingImages}
+                      onAddImageToMarkdown={addImageToMarkdown}
+                    />
                   </div>
                 </TabsContent>
               </Tabs>
@@ -790,6 +858,24 @@ export default function PDFTranslator() {
           </Card>
         );
     }
+  };
+
+  // Function to add image to markdown
+  const addImageToMarkdown = (imageUrl: string, caption?: string) => {
+    const imageMarkdown = `\n\n![${caption || 'Imagen'}](${imageUrl})\n\n${caption ? `*${caption}*\n` : ''}`;
+    setTranslatedText(prev => prev + imageMarkdown);
+  };
+
+  // Function to add all images at the end of the markdown
+  const addAllImagesToMarkdown = () => {
+    if (extractedImages.length === 0) return;
+    
+    let imagesSection = "\n\n## Imágenes Extraídas\n\n";
+    extractedImages.forEach((img, index) => {
+      imagesSection += `\n\n![Figura ${index + 1}](${img.dataUrl})\n\n*Figura ${index + 1}: Imagen de la página ${img.page}*\n`;
+    });
+    
+    setTranslatedText(prev => prev + imagesSection);
   };
 
   return (

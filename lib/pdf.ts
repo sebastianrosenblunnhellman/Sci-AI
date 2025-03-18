@@ -23,6 +23,10 @@ function arrayBufferToBase64(buffer: ArrayBuffer, imageType: string): string {
 interface ExtractedImage {
   page: number;
   dataUrl: string;
+  width?: number;
+  height?: number;
+  size?: number;
+  id?: string;
 }
 
 interface TextContentItem {
@@ -38,7 +42,8 @@ interface TextContentItem {
 // --- Main Extraction Function ---
 export async function extractTextFromPDF(
   file: File, 
-  progressCallback?: (progress: number, currentPage: number, totalPages: number) => void
+  progressCallback?: (progress: number, currentPage: number, totalPages: number) => void,
+  extractImages: boolean = true
 ): Promise<{ text: string; images: ExtractedImage[]; numPages: number }> {
   try {
     if (!file.type.includes('pdf')) {
@@ -55,6 +60,23 @@ export async function extractTextFromPDF(
       throw new Error('The PDF file appears to be empty.');
     }
 
+    // Try direct image extraction from binary data first
+    const directImages: ExtractedImage[] = [];
+    
+    if (extractImages) {
+      try {
+        const nativeImages = await extractImagesDirectly(arrayBuffer);
+        directImages.push(...nativeImages);
+        
+        if (progressCallback) {
+          progressCallback(10, 0, 1); // Report some initial progress
+        }
+      } catch (err) {
+        console.warn('Native image extraction failed, falling back to PDF.js extraction:', err);
+      }
+    }
+    
+    // Continue with regular PDF.js extraction
     const loadingTask = pdfjsLib.getDocument({
       data: arrayBuffer,
       useWorkerFetch: false,
@@ -69,7 +91,7 @@ export async function extractTextFromPDF(
     }
 
     let fullText = '';
-    const images: ExtractedImage[] = [];
+    const images: ExtractedImage[] = [...directImages]; // Start with images extracted directly
     const numPages = pdf.numPages;
 
     if (numPages === 0) {
@@ -88,32 +110,70 @@ export async function extractTextFromPDF(
       const batchPromises = [];
 
       for (let j = i; j <= lastPage; j++) {
-        batchPromises.push(
-          pdf.getPage(j).then(page =>
-            page.getTextContent().then(content => {
-              const pageText = content.items
-                .map((item: any) => {
-                  if (typeof item.str === 'string') {
-                    return item.str;
-                  }
-                  return '';
-                })
-                .join(' ');
+        // Text extraction promise
+        const textPromise = pdf.getPage(j).then(page =>
+          page.getTextContent().then(content => {
+            const pageText = content.items
+              .map((item: any) => {
+                if (typeof item.str === 'string') {
+                  return item.str;
+                }
+                return '';
+              })
+              .join(' ');
 
-              return pageText;
-            })
-          )
+            return pageText;
+          })
         );
+        
+        batchPromises.push(textPromise);
+        
+        // Image extraction promise
+        if (extractImages) {
+          const imagePromise = pdf.getPage(j).then(async page => {
+            const pageImages = await extractImagesFromPage(page, j);
+            return { pageNum: j, images: pageImages };
+          });
+          
+          batchPromises.push(imagePromise);
+        }
       }
 
       const batchResults = await Promise.all(batchPromises);
-      fullText += batchResults.join('\n\n');
+      
+      // Process text results
+      const textResults = batchResults.filter(result => typeof result === 'string');
+      fullText += textResults.join('\n\n');
+      
+      // Process image results
+      if (extractImages) {
+        const imageResults = batchResults.filter(result => result && typeof result === 'object' && 'images' in result);
+        imageResults.forEach((result: any) => {
+          images.push(...result.images);
+        });
+      }
       
       // Report progress after each batch
       if (progressCallback) {
         const currentProgress = Math.min(100, Math.round((lastPage / numPages) * 100));
         progressCallback(currentProgress, lastPage, numPages);
       }
+    }
+
+    // Post-process images to get dimensions
+    if (images.length > 0) {
+      const imagesWithDimensions = await loadImageDimensions(images);
+      
+      // Filter out very small images (icons, etc.)
+      const filteredImages = imagesWithDimensions.filter(img => 
+        (img.width && img.width > 20) && 
+        (img.height && img.height > 20) && 
+        (img.size && img.size > 100)
+      );
+      
+      // Replace the images array with the filtered one
+      images.length = 0;
+      images.push(...filteredImages);
     }
 
     const cleanedText = fullText
@@ -147,43 +207,175 @@ export async function extractTextFromPDF(
   }
 }
 
+// --- Direct Image Extraction Function using binary signatures ---
+async function extractImagesDirectly(arrayBuffer: ArrayBuffer): Promise<ExtractedImage[]> {
+  const extractedImages: ExtractedImage[] = [];
+  const uint8Array = new Uint8Array(arrayBuffer);
+  
+  // Image signatures - common file format headers and footers
+  const signatures = [
+    { 
+      type: 'jpeg', 
+      header: [0xFF, 0xD8, 0xFF], // JPEG header (SOI + first marker)
+      footer: [0xFF, 0xD9]        // JPEG footer (EOI)
+    },
+    { 
+      type: 'png', 
+      header: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A], // PNG header
+      footer: [0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82]  // PNG IEND chunk
+    }
+  ];
+  
+  let imageCount = 0;
+  
+  // Find patterns in the binary data
+  const findPattern = (data: Uint8Array, pattern: number[], startIndex: number): number => {
+    for (let i = startIndex; i <= data.length - pattern.length; i++) {
+      let found = true;
+      for (let j = 0; j < pattern.length; j++) {
+        if (data[i + j] !== pattern[j]) {
+          found = false;
+          break;
+        }
+      }
+      if (found) return i;
+    }
+    return -1;
+  };
+  
+  // Search for images based on signatures
+  for (const signature of signatures) {
+    let index = 0;
+    
+    while (index < uint8Array.length) {
+      // Find header
+      const headerIndex = findPattern(uint8Array, signature.header, index);
+      if (headerIndex === -1) break;
+      
+      // Find footer after header
+      let footerIndex = findPattern(uint8Array, signature.footer, headerIndex + signature.header.length);
+      
+      // For JPEG, we need the complete footer (FF D9)
+      if (signature.type === 'jpeg' && footerIndex !== -1) {
+        footerIndex += signature.footer.length;
+      }
+      
+      // For PNG, we need to include the whole IEND chunk
+      if (signature.type === 'png' && footerIndex !== -1) {
+        footerIndex += signature.footer.length;
+      }
+      
+      if (footerIndex === -1) {
+        index = headerIndex + 1;
+        continue;
+      }
+      
+      // Extract the complete image data
+      const imageData = uint8Array.slice(headerIndex, footerIndex);
+      
+      // Skip if image is too small (likely an icon or metadata)
+      if (imageData.length < 100) {
+        index = footerIndex;
+        continue;
+      }
+      
+      // Create a blob and data URL
+      const blob = new Blob([imageData], { type: `image/${signature.type}` });
+      const imageUrl = URL.createObjectURL(blob);
+      
+      // Add to extracted images
+      extractedImages.push({
+        dataUrl: imageUrl,
+        page: 0, // Page unknown for direct extraction
+        id: `direct-img-${imageCount}`,
+        size: imageData.length
+      });
+      
+      imageCount++;
+      index = footerIndex;
+    }
+  }
+
+  return extractedImages;
+}
+
 // --- Image Extraction Function ---
 async function extractImagesFromPage(page: pdfjsLib.PDFPageProxy, pageNumber: number): Promise<ExtractedImage[]> {
   const images: ExtractedImage[] = [];
-  // Use any type instead of pdfjsLib.OperatorList which doesn't exist in the type definitions
-  const operatorList: any = await page.getOperatorList();
+  
+  try {
+    // Use any type instead of pdfjsLib.OperatorList which doesn't exist in the type definitions
+    const operatorList: any = await page.getOperatorList();
 
-  for (let i = 0; i < operatorList.fnArray.length; i++) {
-    const op = operatorList.fnArray[i];
-    // Use numeric constants instead of pdfjsLib.OPS which might not be exported correctly
-    // 92 is paintImageXObject, 91 is paintXObject (based on common pdf.js values)
-    if (op === 92 || op === 91) {
-      const imageName = operatorList.argsArray[i][0];
+    for (let i = 0; i < operatorList.fnArray.length; i++) {
+      const op = operatorList.fnArray[i];
+      // Use numeric constants instead of pdfjsLib.OPS which might not be exported correctly
+      // 92 is paintImageXObject, 91 is paintXObject (based on common pdf.js values)
+      if (op === 92 || op === 91) {
+        const imageName = operatorList.argsArray[i][0];
 
-      // Type assertion to bypass TypeScript error (temporary)
-      const pageAny: any = page;
+        // Type assertion to bypass TypeScript error (temporary)
+        const pageAny: any = page;
 
-      let img;
+        let img;
 
-      try {
-        //Try to get the image using getXObject
-        img = await pageAny.getXObject(imageName);
-      }
-      catch (error) {
-        //If getXObject fails, try to get the image from the page's objects directly
-        console.log("getXObject failed. Trying alternative method", error)
-        img = pageAny.objs.get(imageName);
-      }
+        try {
+          //Try to get the image using getXObject
+          img = await pageAny.getXObject(imageName);
+        }
+        catch (error) {
+          //If getXObject fails, try to get the image from the page's objects directly
+          console.log("getXObject failed. Trying alternative method", error);
+          img = pageAny.objs.get(imageName);
+        }
 
-
-      if (img && img.data) {
-        const imageType = img.subtype === 'ImageB' ? 'image/bmp' : img.subtype === 'ImageC' ? 'image/jpeg' : 'image/png';
-        const base64Image = arrayBufferToBase64(img.data, imageType);
-        images.push({ page: pageNumber, dataUrl: base64Image });
+        if (img && img.data) {
+          const imageType = img.subtype === 'ImageB' ? 'image/bmp' : img.subtype === 'ImageC' ? 'image/jpeg' : 'image/png';
+          const base64Image = arrayBufferToBase64(img.data, imageType);
+          const type = imageType.split('/')[1];
+          images.push({ 
+            page: pageNumber, 
+            dataUrl: base64Image,
+            id: `img-${pageNumber}-${i}`,
+            size: img.data.length
+          });
+        }
       }
     }
   }
+  catch (error) {
+    console.error(`Error extracting images from page ${pageNumber}:`, error);
+  }
+  
   return images;
+}
+
+// --- Function to load image dimensions ---
+async function loadImageDimensions(imageObjects: ExtractedImage[]): Promise<ExtractedImage[]> {
+  if (typeof window === 'undefined') return imageObjects; // Handle server-side rendering
+
+  return Promise.all(
+    imageObjects.map(imgObj => {
+      return new Promise<ExtractedImage>((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          resolve({
+            ...imgObj,
+            width: img.width,
+            height: img.height
+          });
+        };
+        img.onerror = () => {
+          resolve({
+            ...imgObj,
+            width: 0,
+            height: 0
+          });
+        };
+        img.src = imgObj.dataUrl;
+      });
+    })
+  );
 }
 
 // --- PDF Creation Function ---
