@@ -12,7 +12,7 @@
     "pages:build": "next build",
     "pages:deploy": "wrangler pages deploy .next",
     "cloudflare:deploy": "npm run build && npm run pages:deploy",
-    "vercel-build": "next build"
+    "vercel-build": "chmod +x node_modules/.bin/next && next build"
   },
   "dependencies": {
     "@google/generative-ai": "^0.2.1",
