@@ -129,8 +129,8 @@ async function translateChunkWithRetry(
         - Usa español formal y académico
         - Respeta párrafos y saltos de línea importantes
         - Mantén el formato de cualquier ecuación, referencia o elemento especial en formato LaTeX o Markdown
-        - Si el texto contiene cabeceras o pies de pagina que se repiten constantemente, omítelos
-        - Si hay bibliografia/referencias ordenala en formato APA
+        - Si el texto contiene cabeceras o pies de pagina que se repiten constantemente no lo incluyas en la traducción.
+        - Si hay bibliografia al final del texto colocala en formato APA
 
         IMPORTANTE: Devuelve EXCLUSIVAMENTE el texto traducido en formato Markdown, sin comentarios adicionales ni marcas de código (como \`\`\`markdown).
 

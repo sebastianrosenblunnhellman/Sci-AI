@@ -26,20 +26,7 @@ export function PDFViewer({ pdfData, isGenerating, onGenerate }: PDFViewerProps)
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium">Vista previa del PDF</h3>
         <div className="space-x-2">
-          {!pdfData && (
-            <Button 
-              onClick={onGenerate} 
-              disabled={isGenerating}
-              size="sm"
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Generando...
-                </>
-              ) : "Generar Vista Previa"}
-            </Button>
-          )}
+          {/* Se eliminó el botón "Generar Vista Previa" ya que es redundante */}
           
           {pdfData && (
             <Button
