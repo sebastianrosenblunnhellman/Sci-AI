@@ -40,16 +40,22 @@ export function useDocumentTranslation() {
     }
     
     try {
+      // Get the full API URL for debugging
+      const apiUrl = buildApiUrl('/api/translate-document');
+      console.log("URL de API completa:", apiUrl);
+      
       console.log("Enviando solicitud a la API...");
       console.log("Longitud del texto original:", texto_original?.length || 0);
       console.log("Longitud del texto traducido:", texto_traducido?.length || 0);
       
-      // Use the buildApiUrl function to ensure the URL works in any environment
-      const response = await fetch(buildApiUrl('/api/translate-document'), {
+      // Make the API request with explicit headers and mode
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
+        mode: 'cors',
         body: JSON.stringify({
           nombre,
           tamano,
@@ -60,8 +66,41 @@ export function useDocumentTranslation() {
         }),
       });
       
-      console.log("Respuesta del servidor:", response.status);
-      const data = await response.json();
+      console.log("Respuesta del servidor:", response.status, response.statusText);
+      
+      // Check for common HTTP errors first
+      if (response.status === 405) {
+        const errorMsg = "Método no permitido (405): La API no acepta solicitudes POST. Verifique la configuración del servidor.";
+        console.error(errorMsg);
+        setError(errorMsg);
+        return {
+          success: false,
+          error: errorMsg,
+          isDuplicate: false
+        };
+      }
+      
+      // Try to parse the JSON, with fallbacks for error cases
+      let data;
+      try {
+        const textResponse = await response.text();
+        console.log("Respuesta de texto:", textResponse);
+        
+        // Only attempt to parse if there's content
+        if (textResponse.trim()) {
+          data = JSON.parse(textResponse);
+        } else {
+          data = { error: "Respuesta vacía del servidor" };
+        }
+      } catch (parseError) {
+        console.error("Error al analizar la respuesta JSON:", parseError);
+        return {
+          success: false,
+          error: `Error de formato en la respuesta: ${response.statusText || "Desconocido"}`,
+          isDuplicate: false
+        };
+      }
+      
       console.log("Datos de respuesta:", data);
       
       if (!response.ok) {
@@ -71,18 +110,18 @@ export function useDocumentTranslation() {
           console.log("Documento duplicado detectado");
           return {
             success: false,
-            error: data.error || 'Este documento ya existe en la base de datos',
+            error: data?.error || 'Este documento ya existe en la base de datos',
             isDuplicate: true
           };
         }
         
-        throw new Error(data.error || 'Error al guardar la traducción');
+        throw new Error(data?.error || `Error HTTP ${response.status}: ${response.statusText}`);
       }
       
-      console.log("Guardado exitoso, documento:", data.document);
+      console.log("Guardado exitoso, documento:", data?.document);
       return {
         success: true,
-        document: data.document,
+        document: data?.document,
         isDuplicate: false
       };
       

@@ -6,13 +6,18 @@ type ResponseData = {
   document?: any;
   error?: string;
   isDuplicate?: boolean;
-}
+};
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<ResponseData>
 ) {
+  // Log the request method for debugging
+  console.log("API: Método de solicitud recibido:", req.method);
+  
+  // Only allow POST requests
   if (req.method !== 'POST') {
+    console.log("API: Método no permitido:", req.method);
     return res.status(405).json({ success: false, error: 'Método no permitido' });
   }
 
