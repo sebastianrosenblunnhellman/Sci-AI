@@ -8,12 +8,33 @@ type ResponseData = {
   isDuplicate?: boolean;
 };
 
+// Helper function to set CORS headers
+const setCorsHeaders = (res: NextApiResponse) => {
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
+};
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<ResponseData>
 ) {
+  // Set CORS headers for all responses
+  setCorsHeaders(res);
+  
+  // Handle OPTIONS requests (for CORS preflight)
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  
   // Log the request method for debugging
   console.log("API: Método de solicitud recibido:", req.method);
+  console.log("API: Headers recibidos:", req.headers);
+  console.log("API: URL completa:", req.url);
   
   // Only allow POST requests
   if (req.method !== 'POST') {
@@ -88,3 +109,12 @@ export default async function handler(
     });
   }
 }
+
+// Define config for this API route to extend the maximum body size
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+};

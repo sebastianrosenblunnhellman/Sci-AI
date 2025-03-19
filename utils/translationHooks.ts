@@ -1,6 +1,23 @@
 import { useState } from 'react';
 import { buildApiUrl } from './config';
 
+// First, check if the API is available
+const checkApiAvailability = async (): Promise<boolean> => {
+  try {
+    const healthCheckUrl = buildApiUrl('/api/healthcheck');
+    const response = await fetch(healthCheckUrl, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    console.log("Health check response:", response.status);
+    return response.ok;
+  } catch (error) {
+    console.error("API health check failed:", error);
+    return false;
+  }
+};
+
 interface TranslationResult {
   success: boolean;
   document?: any;
@@ -12,6 +29,15 @@ export function useDocumentTranslation() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDuplicate, setIsDuplicate] = useState(false);
+  const [apiAvailable, setApiAvailable] = useState<boolean | null>(null);
+
+  // Check API availability on component mount
+  useState(() => {
+    checkApiAvailability().then(available => {
+      setApiAvailable(available);
+      console.log("API availability check:", available ? "API is available" : "API is not available");
+    });
+  });
 
   const saveTranslation = async (
     nombre: string,
@@ -38,6 +64,18 @@ export function useDocumentTranslation() {
         isDuplicate: false
       };
     }
+
+    // Check API availability first
+    if (apiAvailable === false) {
+      const errorMsg = "La API no está disponible en este momento. Verifique su conexión o inténtelo más tarde.";
+      setError(errorMsg);
+      setIsLoading(false);
+      return {
+        success: false,
+        error: errorMsg,
+        isDuplicate: false
+      };
+    }
     
     try {
       // Get the full API URL for debugging
@@ -55,7 +93,7 @@ export function useDocumentTranslation() {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        mode: 'cors',
+        credentials: 'same-origin',
         body: JSON.stringify({
           nombre,
           tamano,
@@ -144,6 +182,7 @@ export function useDocumentTranslation() {
     saveTranslation,
     isLoading,
     error,
-    isDuplicate
+    isDuplicate,
+    apiAvailable
   };
 }
