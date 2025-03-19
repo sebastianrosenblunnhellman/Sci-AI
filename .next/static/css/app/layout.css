@@ -1479,6 +1479,10 @@ video {
 .bg-accent {
   background-color: hsl(var(--accent));
 }
+.bg-amber-500 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(245 158 11 / var(--tw-bg-opacity));
+}
 .bg-background {
   background-color: hsl(var(--background));
 }
@@ -1553,6 +1557,10 @@ video {
 }
 .bg-primary\/80 {
   background-color: hsl(var(--primary) / 0.8);
+}
+.bg-red-600 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(220 38 38 / var(--tw-bg-opacity));
 }
 .bg-secondary {
   background-color: hsl(var(--secondary));

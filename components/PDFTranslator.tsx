@@ -1,18 +1,18 @@
 "use client";
 
-import { useState, useEffect } from 'react';'react';
+import { useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import {
   Upload,
   Loader2,
+  FileText,
   Download,
-  AlertCircle,
   Copy,
+  AlertCircle,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Info,
-  FileText,
   ImageIcon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PDFImageExtractor, ExtractedImageProps } from '@/components/PDFImageExtractor';
 import { PDFViewer } from '@/components/PDFViewer';
+import { useDocumentTranslation } from '@/utils/translationHooks';
 
 const STEPS = [
   { id: 'upload', title: 'Subir PDF', description: 'Sube tu documento PDF científico' },
@@ -124,6 +125,9 @@ export default function PDFTranslator() {
     }
   });
 
+  // Add this hook at the component level
+  const { saveTranslation, isLoading: isSavingToDb } = useDocumentTranslation();
+
   const handleNextStep = async () => {
     if (currentStep === 0) {
       // Avanzar al paso de traducción
@@ -134,10 +138,10 @@ export default function PDFTranslator() {
       // Solo proceder con la traducción si la API Key es válida
       try {
         setIsProcessing(true);
+        setError(''); // Limpiar errores previos
         setStepStatus(prev => ({ ...prev, translate: 'processing' }));
         setProgress(5); // Iniciar con un valor bajo
-        setError(''); // Limpiar errores previos
-        
+
         if (!extractedText.trim()) {
           throw new Error('No se pudo extraer texto del PDF.');
         }
@@ -156,9 +160,148 @@ export default function PDFTranslator() {
         if (!translated.trim()) {
           throw new Error('La traducción falló. Por favor, inténtelo de nuevo.');
         }
-        
+
         setTranslatedText(translated);
         setProgress(100);
+        
+        // AQUÍ: Guardar la traducción en la base de datos
+        try {
+          const result = await saveTranslation(
+            file?.name || "documento.pdf",
+            file ? (file.size / (1024 * 1024)) : 0, // Tamaño en MB
+            numPages,
+            extractedText.length,
+            extractedText,
+            translated
+          );
+          
+          if (result.success) {
+            console.log("Traducción guardada en la base de datos:", result.document);
+            // Opcional: Mostrar notificación de éxito
+          } else {
+            console.error("Error al guardar traducción:", result.error);
+            // El error no debería interrumpir el flujo del usuario
+          }
+        } catch (dbError) {
+          console.error("Error al intentar guardar en la base de datos:", dbError);
+          // No interrumpir el flujo principal si falla el guardado
+        }
+
+        setStepStatus(prev => ({ ...prev, translate: 'complete', edit: 'pending' }));
+        setCurrentStep(2);
+      } catch (err) {
+        console.error("Error durante la traducción:", err);
+        setError(err instanceof Error ? err.message : 'Ocurrió un error inesperado');
+        setStepStatus(prev => ({
+          ...prev,
+          translate: 'error'
+        }));
+      } finally {
+        setIsProcessing(false);
+      }
+    }
+  };
+
+  const handleTranslate = async () => {
+    if (currentStep === 1 && isApiKeyValid) {
+      // Solo proceder con la traducción si la API Key es válida
+      try {
+        setIsProcessing(true);
+        setError(''); // Limpiar errores previos
+        setStepStatus(prev => ({ ...prev, translate: 'processing' }));
+        setProgress(5); // Iniciar con un valor bajo
+
+        if (!extractedText.trim()) {
+          throw new Error('No se pudo extraer texto del PDF.');
+        }
+
+        // Traducir el texto usando el nuevo callback de progreso
+        const translated = await translateChunks(
+          extractedText, 
+          apiKey, 
+          (translationProgress) => {
+            // Asegurar que el progreso tenga un rango de 10 a 90 para mostrar un avance gradual
+            const normalizedProgress = Math.floor(10 + (translationProgress * 0.8));
+            setProgress(normalizedProgress);
+          }
+        );
+
+        if (!translated.trim()) {
+          throw new Error('La traducción falló. Por favor, inténtelo de nuevo.');
+        }
+
+        setTranslatedText(translated);
+        setProgress(100);
+        
+        // AQUÍ: Guardar la traducción en la base de datos - Mejorado con manejo de errores detallado
+        try {
+          console.log("Intentando guardar en base de datos...");
+          console.log("Datos a guardar:", {
+            nombre: file?.name || "documento.pdf",
+            tamano: file ? (file.size / (1024 * 1024)) : 0,
+            paginas: numPages,
+            caracteres: extractedText.length
+          });
+          
+          const result = await saveTranslation(
+            file?.name || "documento.pdf",
+            file ? (file.size / (1024 * 1024)) : 0, // Tamaño en MB
+            numPages,
+            extractedText.length,
+            extractedText,
+            translated
+          );
+          
+          if (result.success) {
+            console.log("Traducción guardada exitosamente:", result.document);
+            // Mostrar notificación de éxito al usuario
+            const notification = document.createElement('div');
+            notification.className = 'fixed bottom-4 right-4 bg-green-600 text-white py-2 px-4 rounded-md shadow-lg animate-fade-in-out z-50';
+            notification.textContent = '¡Traducción guardada en la base de datos!';
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+              document.body.removeChild(notification);
+            }, 3000);
+          } else {
+            if (result.isDuplicate) {
+              console.log("Documento duplicado detectado:", result.error);
+              // Notificar al usuario que es un documento duplicado
+              const notification = document.createElement('div');
+              notification.className = 'fixed bottom-4 right-4 bg-amber-500 text-white py-2 px-4 rounded-md shadow-lg animate-fade-in-out z-50';
+              notification.textContent = 'Este documento ya existe en la base de datos';
+              document.body.appendChild(notification);
+              
+              setTimeout(() => {
+                document.body.removeChild(notification);
+              }, 3000);
+            } else {
+              console.error("Error al guardar traducción:", result.error);
+              // Notificar error pero no interrumpir el flujo
+              const notification = document.createElement('div');
+              notification.className = 'fixed bottom-4 right-4 bg-red-600 text-white py-2 px-4 rounded-md shadow-lg animate-fade-in-out z-50';
+              notification.textContent = 'No se pudo guardar en base de datos: ' + (result.error || 'Error desconocido');
+              document.body.appendChild(notification);
+              
+              setTimeout(() => {
+                document.body.removeChild(notification);
+              }, 3000);
+            }
+            // El error no debería interrumpir el flujo del usuario
+          }
+        } catch (dbError) {
+          console.error("Error detallado al guardar en la base de datos:", dbError);
+          // Mostrar notificación de error
+          const notification = document.createElement('div');
+          notification.className = 'fixed bottom-4 right-4 bg-red-600 text-white py-2 px-4 rounded-md shadow-lg animate-fade-in-out z-50';
+          notification.textContent = 'Error al guardar: ' + (dbError instanceof Error ? dbError.message : 'Error desconocido');
+          document.body.appendChild(notification);
+          
+          setTimeout(() => {
+            document.body.removeChild(notification);
+          }, 3000);
+        }
+
         setStepStatus(prev => ({ ...prev, translate: 'complete', edit: 'pending' }));
         setCurrentStep(2);
       } catch (err) {
@@ -196,7 +339,7 @@ export default function PDFTranslator() {
       } else {
         setError("");
       }
-    } catch (err) {
+    } catch {
       setIsApiKeyValid(false);
       setError("Error al verificar la API Key. Por favor, inténtelo de nuevo.");
     } finally {
@@ -218,13 +361,11 @@ export default function PDFTranslator() {
       
       // Añadir un timeout para evitar que la UI se bloquee
       await new Promise(resolve => setTimeout(resolve, 100));
-      
       const pdfBytes = await createPDFFromMarkdown(translatedText)
         .catch((err) => {
           console.error("Error detallado al crear PDF:", err);
           throw new Error(`Error al procesar Markdown: ${err.message}`);
         });
-      
       if (!pdfBytes || pdfBytes.length === 0) {
         throw new Error('La generación del PDF falló - no se recibieron datos');
       }
@@ -234,7 +375,6 @@ export default function PDFTranslator() {
       // Crear el blob y descargar
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
-      
       // Intentar primero abrir en una nueva pestaña, que funciona más consistentemente
       try {
         console.log("Abriendo PDF en nueva pestaña...");
@@ -260,7 +400,7 @@ export default function PDFTranslator() {
     } catch (err) {
       console.error("Error completo:", err);
       setError(err instanceof Error 
-        ? `Error al generar el PDF: ${err.message}` 
+        ? `Error al generar el PDF: ${err.message}`
         : 'Error inesperado al generar el PDF');
     }
   };
@@ -273,6 +413,7 @@ export default function PDFTranslator() {
       notification.className = 'fixed bottom-4 right-4 bg-green-600 text-white py-2 px-4 rounded-md shadow-lg animate-fade-in-out z-50';
       notification.textContent = '¡Texto copiado al portapapeles!';
       document.body.appendChild(notification);
+      
       setTimeout(() => {
         document.body.removeChild(notification);
       }, 2000);
@@ -284,7 +425,7 @@ export default function PDFTranslator() {
 
   // Detectar si es dispositivo móvil
   const [isMobile, setIsMobile] = useState(false);
-  
+
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
@@ -316,14 +457,13 @@ export default function PDFTranslator() {
               )}></div>
             )}
             
-            <div className={cn(
-              "w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all mb-2 bg-background",
-              {
+            <div className={cn({
                 'border-primary bg-primary text-primary-foreground': stepStatus[step.id] === 'complete',
                 'border-primary text-primary': currentStep === index && stepStatus[step.id] !== 'complete',
                 'border-muted-foreground/30': currentStep < index,
                 'animate-pulse': stepStatus[step.id] === 'processing'
-              }
+              },
+              "w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all mb-2 bg-background",
             )}>
               {stepStatus[step.id] === 'complete' ? (
                 <CheckCircle2 className="h-5 w-5" />
@@ -431,9 +571,7 @@ export default function PDFTranslator() {
                         <CheckCircle2 className="h-5 w-5 text-green-600" />
                       </div>
                       <div>
-                        <h4 className="text-sm font-medium text-green-800">
-                          Extracción completa
-                        </h4>
+                        <h4 className="text-sm font-medium text-green-800">Extracción completa</h4>
                         <p className="text-xs text-green-700">
                           Se han extraído {numPages} páginas y {extractedText.length.toLocaleString()} caracteres.
                         </p>
@@ -456,7 +594,7 @@ export default function PDFTranslator() {
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="max-w-[260px] text-xs">
                                   Sin procesar
-                               </TooltipContent>
+                                </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
                           </div>
@@ -487,7 +625,6 @@ export default function PDFTranslator() {
             )}
           </Card>
         );
-
       case 1: // Translate
         return (
           <Card className="p-4 md:p-6 transition-all">
@@ -567,7 +704,6 @@ export default function PDFTranslator() {
                       </a>
                     </p>
                   </div>
-                  
                   <div className="space-y-4">
                     <div className="space-y-3">
                       <label htmlFor="api-key" className="text-sm font-medium flex items-center gap-2">
@@ -676,39 +812,38 @@ export default function PDFTranslator() {
                         </div>
                       </div>
                     </div>
-                  </div>
-                  
-                  <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-between pt-2">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setCurrentStep(0)}
-                      className="flex items-center transition-transform hover:-translate-x-0.5 duration-200"
-                    >
-                      <ChevronLeft className="mr-1 h-4 w-4" />
-                      Volver
-                    </Button>
-                    <Button 
-                      onClick={handleNextStep}
-                      disabled={!isApiKeyValid}
-                      className={cn(
-                        "transition-all duration-200",
-                        !isApiKeyValid ? "opacity-50 cursor-not-allowed" : "hover:translate-x-0.5"
-                      )}
-                    >
-                      {isApiKeyValid ? (
-                        <>
-                          Iniciar traducción
-                          <ChevronRight className="ml-1 h-4 w-4" />
-                        </>
-                      ) : "Verifique la API Key primero"}
-                    </Button>
+                    
+                    <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-between pt-2">
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setCurrentStep(0)}
+                        className="flex items-center transition-transform hover:-translate-x-0.5 duration-200"
+                      >
+                        <ChevronLeft className="mr-1 h-4 w-4" />
+                        Volver
+                      </Button>
+                      <Button 
+                        onClick={handleNextStep}
+                        disabled={!isApiKeyValid}
+                        className={cn(
+                          "transition-all duration-200",
+                          !isApiKeyValid ? "opacity-50 cursor-not-allowed" : "hover:translate-x-0.5"
+                        )}
+                      >
+                        {isApiKeyValid ? (
+                          <>
+                            Iniciar traducción
+                            <ChevronRight className="ml-1 h-4 w-4" />
+                          </>
+                        ) : "Verifique la API Key primero"}
+                      </Button>
+                    </div>
                   </div>
                 </>
               )}
             </div>
           </Card>
         );
-
       case 2: // Edit
         return (
           <Card className="p-4 md:p-6 transition-all">
@@ -721,7 +856,6 @@ export default function PDFTranslator() {
                       Revise y realice ajustes al texto traducido
                     </p>
                   </div>
-                  
                   <div className="flex flex-wrap gap-2">
                     <TabsList className="grid grid-cols-3 h-8">
                       <TabsTrigger value="editor" className="text-xs">Editor</TabsTrigger>
@@ -787,7 +921,7 @@ export default function PDFTranslator() {
                   
                   {extractedImages.length > 0 && (
                     <div className="mt-4 flex justify-end">
-                      <Button
+                      <Button 
                         onClick={addAllImagesToMarkdown}
                         variant="outline" 
                         size="sm"
@@ -864,12 +998,11 @@ export default function PDFTranslator() {
   // Function to add all images at the end of the markdown
   const addAllImagesToMarkdown = () => {
     if (extractedImages.length === 0) return;
-    
+
     let imagesSection = "\n\n## Imágenes Extraídas\n\n";
     extractedImages.forEach((img, index) => {
       imagesSection += `\n\n![Figura ${index + 1}](${img.dataUrl})\n\n*Figura ${index + 1}: Imagen de la página ${img.page}*\n`;
     });
-    
     setTranslatedText(prev => prev + imagesSection);
   };
 
@@ -879,8 +1012,8 @@ export default function PDFTranslator() {
       <div className="transition-all duration-300">
         {/* Contenido de la app */}
         <div className="container mx-auto px-4 py-6 max-w-4xl">
+          {/* Step Indicator */}
           {renderStepIndicator()}
-          
           {/* Error Display */}
           {error && (
             <Alert variant="destructive" className="mb-4 animate-fadeIn">
@@ -888,7 +1021,6 @@ export default function PDFTranslator() {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-
           {/* Step Content */}
           <div className="transition-all duration-300">
             {renderStepContent()}

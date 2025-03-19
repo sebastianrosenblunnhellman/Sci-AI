@@ -1,0 +1,24 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("POSTGRES_PRISMA_URL")
+  directUrl = env("POSTGRES_URL_NON_POOLING")
+}
+
+// Define your models here
+model Documento {
+  id              String   @id @default(uuid())
+  nombre          String
+  tamano          Float
+  paginas         Int
+  caracteres      Int
+  texto_original  String?  @db.Text
+  texto_traducido String?  @db.Text
+  createdAt       DateTime @default(now())
+}

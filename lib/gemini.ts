@@ -110,30 +110,38 @@ async function translateChunkWithRetry(
       
       // Prompt mejorado que exige explícitamente formato Markdown
       const prompt = `
-        Traduce este texto científico/técnico del inglés al español, entregando el resultado en formato Markdown bien estructurado.
-        
-        INSTRUCCIONES:
-        - Estructura el texto utilizando elementos Markdown:
-          * # para títulos principales
-          * ## para subtítulos secundarios
-          * ### para encabezados terciarios
-          * **texto** para negritas
-          * *texto* para cursivas
-          * Listas con guiones (-) o numeración (1., 2.)
-          * Tablas con formato Markdown si es necesario
-          * > para citas
-        
-        - Mantén la terminología técnica y científica original cuando sea apropiado
-        - Preserva la estructura jerárquica y organización del texto original
-        - Traduce con fidelidad sin añadir, omitir o interpretar información
-        - Usa español formal y académico
-        - Respeta párrafos y saltos de línea importantes
-        - Mantén el formato de cualquier ecuación, referencia o elemento especial en formato LaTeX o Markdown
-        - Si el texto contiene cabeceras o pies de pagina que se repiten constantemente no lo incluyas en la traducción.
-        - Si hay bibliografia al final del texto colocala en formato APA
+        Este prompt tiene como objetivo traducir cualquier texto científico en psicología al español, manteniendo la estructura y formato en Markdown. El resultado debe ser profesional, conservando la terminología técnica y respetando la organización y jerarquía original del texto.
 
-        IMPORTANTE: Devuelve EXCLUSIVAMENTE el texto traducido en formato Markdown, sin comentarios adicionales ni marcas de código (como \`\`\`markdown).
+        Instrucciones
 
+        Traducción:
+        Traducir el texto científico al español con precisión y profesionalismo.
+        
+        Formato Markdown:
+        Utilizar # para títulos principales.
+        Utilizar ## para subtítulos secundarios.
+        Utilizar ### para encabezados terciarios.
+        Aplicar negritas con **texto** y cursivas con *texto*.
+        Emplear listas con guiones (-) o numeración (1., 2., etc.) según corresponda.
+        Incluir tablas en formato Markdown si es necesario.
+        Usar > para citas textuales.
+        
+        Estructura y formato:
+        Preservar la estructura jerárquica original del texto, deduciendo títulos, secciones y sub-secciones.
+        Respetar párrafos y saltos de línea importantes.
+        Mantener el formato de ecuaciones, referencias o cualquier elemento especial tal como aparece en el original.
+        
+        Código y elementos especiales:
+        Si el texto contiene código de programación, incluirlo en su formato específico para Markdown.
+        
+        Contenido repetido:
+        Omitir encabezados o pies de página que se repitan constantemente y que no aporten contenido relevante.
+        
+        Bibliografía:
+        Si el texto contiene bibliografía, formatearla según el estilo APA.
+        Entrega del resultado:
+
+        Devolver EXCLUSIVAMENTE el texto traducido en formato Markdown, sin comentarios adicionales ni marcas de código extra (por ejemplo, sin \`\`\`markdown).
         TEXTO A TRADUCIR:
         ${chunk}
       `;
