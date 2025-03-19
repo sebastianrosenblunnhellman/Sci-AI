@@ -64,8 +64,11 @@ export default async function handler(
       });
     }
 
-    console.log("API: Documento guardado exitosamente:", result.document.id);
-    return res.status(201).json({ success: true, document: result.document });
+    console.log("API: Documento guardado exitosamente:", result.document?.id);
+    return res.status(201).json({ 
+      success: true, 
+      document: result.document || undefined 
+    });
     
   } catch (error) {
     console.error("API: Error al procesar la solicitud:", error);
