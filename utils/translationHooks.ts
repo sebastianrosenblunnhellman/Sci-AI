@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { buildApiUrl } from './config';
 
 interface TranslationResult {
   success: boolean;
@@ -9,7 +10,7 @@ interface TranslationResult {
 
 export function useDocumentTranslation() {
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [isDuplicate, setIsDuplicate] = useState(false);
 
   const saveTranslation = async (
@@ -43,7 +44,8 @@ export function useDocumentTranslation() {
       console.log("Longitud del texto original:", texto_original?.length || 0);
       console.log("Longitud del texto traducido:", texto_traducido?.length || 0);
       
-      const response = await fetch('/api/translate-document', {
+      // Use the buildApiUrl function to ensure the URL works in any environment
+      const response = await fetch(buildApiUrl('/api/translate-document'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
