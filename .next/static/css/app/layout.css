@@ -2053,6 +2053,9 @@ video {
 .ease-in-out {
   animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
+.running {
+  animation-play-state: running;
+}
 /* Basic styles for ReactMarkdown content */
 .react-markdown {
     color: var(--foreground); /* Use your theme's foreground color */
