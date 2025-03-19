@@ -1,12 +1,20 @@
 import { useDocumentTranslation } from '../utils/translationHooks';
 
+// Define a type for the Gemini API response
+interface GeminiTranslationResponse {
+  text?: string;
+  // Add other properties that might be in your response
+  data?: any;
+  status?: number;
+}
+
 // ...existing code...
 
 // Add this hook at the component level
 const { saveTranslation, isLoading: isSaving, error: saveError } = useDocumentTranslation();
 
 // Find your Gemini API call function and add the database save
-const handleGeminiResponse = async (response) => {
+const handleGeminiResponse = async (response: GeminiTranslationResponse) => {
   // ...existing code...
   
   // After you've successfully received and processed the translation:
