@@ -23,6 +23,7 @@ export default async function handler(
 
     // Validar que se proporcionaron los datos necesarios
     if (!nombre || tamano === undefined || !paginas || caracteres === undefined) {
+      console.log("API: Faltan datos requeridos:", { nombre, tamano, paginas, caracteres });
       return res.status(400).json({ 
         success: false, 
         error: 'Faltan datos requeridos para el documento' 
@@ -52,7 +53,7 @@ export default async function handler(
         console.log("API: Se detectó un documento duplicado");
         return res.status(409).json({ 
           success: false, 
-          error: result.error,
+          error: result.error || 'Documento duplicado',
           isDuplicate: true
         });
       }
@@ -60,21 +61,25 @@ export default async function handler(
       console.log("API: Error al guardar documento:", result.error);
       return res.status(500).json({ 
         success: false, 
-        error: result.error
+        error: result.error || 'Error al guardar el documento'
       });
     }
 
     console.log("API: Documento guardado exitosamente:", result.document?.id);
     return res.status(201).json({ 
       success: true, 
-      document: result.document || undefined 
+      document: result.document || {} 
     });
     
   } catch (error) {
     console.error("API: Error al procesar la solicitud:", error);
+    // Mejorar el manejo de errores para la implementación en Vercel
+    const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+    console.error("API: Detalle del error:", errorMessage);
+    
     return res.status(500).json({ 
       success: false, 
-      error: error instanceof Error ? error.message : 'Error desconocido'
+      error: errorMessage
     });
   }
 }
