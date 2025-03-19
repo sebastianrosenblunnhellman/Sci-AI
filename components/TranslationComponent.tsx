@@ -85,8 +85,8 @@ export default function TranslationComponent() {
         {isLoading ? 'Translating...' : 'Translate'}
       </button>
       
-      {/* Display error if any */}
-      {error && <div className="error">{error.message}</div>}
+      {/* Display error if any - fixed to use error directly since it's now a string */}
+      {error && <div className="error">{error}</div>}
       
       {/* Display translated text */}
       {translatedText && (

@@ -4,7 +4,7 @@ import { buildApiUrl } from './config';
 interface TranslationResult {
   success: boolean;
   document?: any;
-  error?: any;
+  error?: string;
   isDuplicate?: boolean;
 }
 
@@ -30,7 +30,7 @@ export function useDocumentTranslation() {
     // Validación básica
     if (!texto_traducido || texto_traducido.trim() === '') {
       console.error("Error: Texto traducido vacío");
-      setError(new Error("El texto traducido está vacío"));
+      setError("El texto traducido está vacío");
       setIsLoading(false);
       return {
         success: false,
@@ -89,7 +89,7 @@ export function useDocumentTranslation() {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
       console.error("Error capturado:", errorMessage);
-      setError(new Error(errorMessage));
+      setError(errorMessage);
       
       return {
         success: false,
