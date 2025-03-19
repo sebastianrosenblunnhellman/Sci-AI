@@ -1,10 +1,25 @@
 import { useState } from 'react';
 import { buildApiUrl } from './config';
 
-// First, check if the API is available
+// First, check if the API is available using absolute URL
 const checkApiAvailability = async (): Promise<boolean> => {
   try {
-    const healthCheckUrl = buildApiUrl('/api/healthcheck');
+    // Get the healthcheck URL
+    let healthCheckUrl = buildApiUrl('/api/healthcheck');
+    
+    // Ensure we have an absolute URL
+    if (!healthCheckUrl.startsWith('http')) {
+      // If we don't have a valid URL, construct one manually using the browser's location
+      if (typeof window !== 'undefined') {
+        healthCheckUrl = `${window.location.origin}/api/healthcheck`;
+      } else {
+        console.error("Cannot construct absolute URL for health check");
+        return false;
+      }
+    }
+    
+    console.log("Performing health check with URL:", healthCheckUrl);
+    
     const response = await fetch(healthCheckUrl, {
       method: 'GET',
       headers: { 'Accept': 'application/json' }
@@ -78,9 +93,18 @@ export function useDocumentTranslation() {
     }
     
     try {
-      // Get the full API URL for debugging
-      const apiUrl = buildApiUrl('/api/translate-document');
-      console.log("URL de API completa:", apiUrl);
+      // Get the API URL for the request
+      let apiUrl = buildApiUrl('/api/translate-document');
+      
+      // Ensure we have an absolute URL
+      if (!apiUrl.startsWith('http')) {
+        // If we don't have a valid URL, construct one manually using the browser's location
+        if (typeof window !== 'undefined') {
+          apiUrl = `${window.location.origin}/api/translate-document`;
+        }
+      }
+      
+      console.log("URL de API completa (para guardar):", apiUrl);
       
       console.log("Enviando solicitud a la API...");
       console.log("Longitud del texto original:", texto_original?.length || 0);

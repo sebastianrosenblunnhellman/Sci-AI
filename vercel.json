@@ -3,22 +3,19 @@
   "builds": [
     {
       "src": "package.json",
-      "use": "@vercel/next",
-      "config": {
-        "buildCommand": "chmod +x node_modules/.bin/next && next build"
-      }
+      "use": "@vercel/next"
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
+      "dest": "/api/$1",
       "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       "headers": {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
-      },
-      "continue": true
+      }
     }
   ],
   "functions": {
